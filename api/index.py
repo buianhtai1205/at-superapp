@@ -1,23 +1,13 @@
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.middleware.cors import CORSMiddleware
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import parse_qs, urlparse
+import json
 import yfinance as yf
 import pandas as pd
 import numpy as np
 from datetime import datetime
 import math
 
-app = FastAPI()
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 def safe_float(value):
-    """Convert numpy/pandas NaN, inf, -inf to None for JSON compliance"""
     if value is None:
         return None
     if pd.isna(value):
@@ -28,7 +18,6 @@ def safe_float(value):
     return float(value)
 
 def clean_options_data(df):
-    """Clean and filter options dataframe for API response"""
     if df.empty:
         return []
     
@@ -39,7 +28,6 @@ def clean_options_data(df):
     
     existing_cols = [c for c in columns_to_keep if c in df.columns]
     df = df[existing_cols].copy()
-    
     records = df.to_dict('records')
     
     cleaned_records = []
@@ -56,78 +44,82 @@ def clean_options_data(df):
     
     return cleaned_records
 
-@app.get("")
-async def root():
-    """Health check endpoint"""
-    return {
-        "status": "ok",
-        "message": "Stock Options API is running"
-    }
-
-@app.get("/stock-options")
-async def get_options(symbol: str):
-    """Get stock options data for a given symbol"""
-    if not symbol:
-        raise HTTPException(status_code=400, detail="Missing 'symbol' parameter")
-    
-    symbol = symbol.upper().strip()
-    
-    try:
-        ticker = yf.Ticker(symbol)
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Parse URL and query parameters
+        parsed_path = urlparse(self.path)
+        params = parse_qs(parsed_path.query)
         
-        expirations = ticker.options
-        if not expirations or len(expirations) == 0:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"No options data available for {symbol}"
-            )
-
-        nearest_expiration = expirations[0]
-        options_chain = ticker.option_chain(nearest_expiration)
+        # Set CORS headers
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        self.end_headers()
         
-        if options_chain.calls.empty and options_chain.puts.empty:
-            raise HTTPException(
-                status_code=404,
-                detail=f"No options contracts found for {symbol}"
-            )
+        # Get symbol from query parameters
+        symbol = params.get('symbol', [None])[0]
         
-        current_price = None
+        if not symbol:
+            response = {'detail': 'Missing symbol parameter'}
+            self.wfile.write(json.dumps(response).encode())
+            return
+        
         try:
-            info = ticker.info
-            current_price = info.get('currentPrice') or info.get('regularMarketPrice')
-        except:
-            pass
-        
-        if current_price is None:
+            symbol = symbol.upper().strip()
+            ticker = yf.Ticker(symbol)
+            expirations = ticker.options
+            
+            if not expirations or len(expirations) == 0:
+                response = {'detail': f'No options data available for {symbol}'}
+                self.wfile.write(json.dumps(response).encode())
+                return
+
+            nearest_expiration = expirations[0]
+            options_chain = ticker.option_chain(nearest_expiration)
+            
+            if options_chain.calls.empty and options_chain.puts.empty:
+                response = {'detail': f'No options contracts found for {symbol}'}
+                self.wfile.write(json.dumps(response).encode())
+                return
+            
+            current_price = None
             try:
-                current_price = ticker.fast_info.get('lastPrice')
+                info = ticker.info
+                current_price = info.get('currentPrice') or info.get('regularMarketPrice')
             except:
                 pass
-        
-        if current_price is None:
-            try:
-                hist = ticker.history(period='1d')
-                if not hist.empty:
-                    current_price = hist['Close'].iloc[-1]
-            except:
-                pass
-        
-        current_price = safe_float(current_price) or 0
+            
+            if current_price is None:
+                try:
+                    hist = ticker.history(period='1d')
+                    if not hist.empty:
+                        current_price = hist['Close'].iloc[-1]
+                except:
+                    pass
+            
+            current_price = safe_float(current_price) or 0
 
-        return {
-            'symbol': symbol,
-            'currentPrice': current_price,
-            'expirationDate': nearest_expiration,
-            'allExpirations': list(expirations),
-            'calls': clean_options_data(options_chain.calls),
-            'puts': clean_options_data(options_chain.puts),
-            'timestamp': datetime.now().isoformat()
-        }
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Error fetching options data: {str(e)}"
-        )
+            response = {
+                'symbol': symbol,
+                'currentPrice': current_price,
+                'expirationDate': nearest_expiration,
+                'allExpirations': list(expirations),
+                'calls': clean_options_data(options_chain.calls),
+                'puts': clean_options_data(options_chain.puts),
+                'timestamp': datetime.now().isoformat()
+            }
+            
+            self.wfile.write(json.dumps(response).encode())
+            
+        except Exception as e:
+            response = {'detail': f'Error: {str(e)}'}
+            self.wfile.write(json.dumps(response).encode())
+    
+    def do_OPTIONS(self):
+        self.send_response(200)
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', '*')
+        self.end_headers()
