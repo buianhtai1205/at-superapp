@@ -28,4 +28,4 @@ dist-ssr
 
 # Python
 venv/
-
+api/__pycache__/

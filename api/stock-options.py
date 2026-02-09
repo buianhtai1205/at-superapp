@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -153,3 +154,6 @@ async def root():
         "status": "ok",
         "message": "Stock Options API is running"
     }
+
+# Mangum handler for Vercel serverless deployment
+handler = Mangum(app)
