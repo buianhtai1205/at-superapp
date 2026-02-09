@@ -1,6 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -9,7 +8,7 @@ import math
 
 app = FastAPI()
 
-# Configure CORS to allow frontend requests
+# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -38,14 +37,11 @@ def clean_options_data(df):
         'volume', 'openInterest', 'impliedVolatility', 'inTheMoney'
     ]
     
-    # Only keep columns that exist in the dataframe
     existing_cols = [c for c in columns_to_keep if c in df.columns]
     df = df[existing_cols].copy()
     
-    # Convert to dict first
     records = df.to_dict('records')
     
-    # Clean each record thoroughly
     cleaned_records = []
     for record in records:
         cleaned_record = {}
@@ -70,15 +66,7 @@ async def root():
 
 @app.get("/api/stock-options")
 async def get_options(symbol: str):
-    """
-    Get stock options data for a given symbol
-    
-    Args:
-        symbol: Stock ticker symbol (e.g., AAPL, TSLA)
-        
-    Returns:
-        JSON with options chain data including calls and puts
-    """
+    """Get stock options data for a given symbol"""
     if not symbol:
         raise HTTPException(status_code=400, detail="Missing 'symbol' parameter")
     
@@ -87,7 +75,6 @@ async def get_options(symbol: str):
     try:
         ticker = yf.Ticker(symbol)
         
-        # Get list of expiration dates
         expirations = ticker.options
         if not expirations or len(expirations) == 0:
             raise HTTPException(
@@ -95,18 +82,15 @@ async def get_options(symbol: str):
                 detail=f"No options data available for {symbol}"
             )
 
-        # Get options chain for nearest expiration date
         nearest_expiration = expirations[0]
         options_chain = ticker.option_chain(nearest_expiration)
         
-        # Validate that we got valid options data
         if options_chain.calls.empty and options_chain.puts.empty:
             raise HTTPException(
                 status_code=404,
                 detail=f"No options contracts found for {symbol}"
             )
         
-        # Get current stock price with multiple fallback methods
         current_price = None
         try:
             info = ticker.info
@@ -147,6 +131,3 @@ async def get_options(symbol: str):
             status_code=500, 
             detail=f"Error fetching options data: {str(e)}"
         )
-
-# Handler for Vercel
-handler = Mangum(app, lifespan="off")
