@@ -36,6 +36,24 @@ export const StockAnalysis: React.FC = () => {
         }
     };
 
+    const handleExpirationChange = async (newExpiration: string) => {
+        if (!symbol || !optionsData) return;
+
+        setLoading(true);
+        setError(null);
+
+        try {
+            const data = await fetchOptionsData(symbol, newExpiration);
+            setOptionsData(data);
+            setFilters([]);
+            setSearchQuery('');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'Failed to fetch data');
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleKeyPress = (e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
             handleSearch();
@@ -109,7 +127,7 @@ export const StockAnalysis: React.FC = () => {
 
     const handleExport = () => {
         const data = getFilteredData();
-        const filename = `${optionsData?.symbol}_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`;
+        const filename = `${optionsData?.symbol}_${activeTab}_${optionsData?.selectedExpiration}_${new Date().toISOString().split('T')[0]}.csv`;
         exportToCSV(data, filename);
     };
 
@@ -182,13 +200,34 @@ export const StockAnalysis: React.FC = () => {
                             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                                 <div>
                                     <h2 className="text-2xl font-bold">{optionsData.symbol}</h2>
-                                    <p className="text-blue-100 text-sm mt-1">Expiration: {optionsData.expirationDate}</p>
+                                    <p className="text-blue-100 text-sm mt-1">
+                                        {optionsData.expirationOptions.find(e => e.date === optionsData.selectedExpiration)?.label || optionsData.selectedExpiration}
+                                    </p>
                                 </div>
                                 <div className="flex items-baseline gap-2">
                                     <span className="text-sm text-blue-100">Current Price:</span>
                                     <span className="text-3xl font-bold">${formatNumber(optionsData.currentPrice)}</span>
                                 </div>
                             </div>
+                        </div>
+
+                        {/* Expiration Date Selector */}
+                        <div className="bg-gray-50 border-b border-gray-200 p-4">
+                            <label className="block text-sm font-semibold text-slate-700 mb-2">
+                                📅 Expiration Date
+                            </label>
+                            <select
+                                value={optionsData.selectedExpiration}
+                                onChange={(e) => handleExpirationChange(e.target.value)}
+                                disabled={loading}
+                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent bg-white text-slate-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {optionsData.expirationOptions.map(exp => (
+                                    <option key={exp.date} value={exp.date}>
+                                        {exp.label}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         {/* Tabs */}
@@ -309,7 +348,7 @@ export const StockAnalysis: React.FC = () => {
                                             </td>
                                         </tr>
                                     ) : (
-                                        filteredData.map((option, idx) => (
+                                        filteredData.map((option) => (
                                             <tr
                                                 key={option.contractSymbol}
                                                 className={`hover:bg-gray-50 transition-colors ${option.inTheMoney ? 'bg-emerald-50/50' : ''

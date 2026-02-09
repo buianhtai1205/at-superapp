@@ -50,24 +50,34 @@ export interface AppData {
   settings: UserSettings;
 }
 
+export interface ExpirationOption {
+  date: string;
+  daysToExpiration: number | null;
+  label: string;
+}
+
 // Stock Options Types
 export interface StockOption {
+  expirationDate: string;
   contractSymbol: string;
   strike: number;
   lastPrice: number;
   bid: number | null;
   ask: number | null;
+  change?: number | null;
+  percentChange?: number | null;
   volume: number | null;
   openInterest: number | null;
   impliedVolatility: number | null;
   inTheMoney: boolean;
+  lastTradeDate?: string | null;
 }
 
 export interface OptionsChainData {
   symbol: string;
   currentPrice: number;
-  expirationDate: string;
-  allExpirations: string[];
+  selectedExpiration: string;
+  expirationOptions: ExpirationOption[];
   calls: StockOption[];
   puts: StockOption[];
   timestamp: string;
@@ -81,5 +91,4 @@ export interface FilterConfig {
 
 export interface StockApiError {
   error: string;
-  timestamp: string;
 }
