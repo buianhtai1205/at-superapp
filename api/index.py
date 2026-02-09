@@ -51,19 +51,24 @@ def clean_options_data(df):
         cleaned_record = {}
         for key, value in record.items():
             if key == 'contractSymbol':
-                # Keep string as-is
                 cleaned_record[key] = str(value) if value is not None else None
             elif key == 'inTheMoney':
-                # Keep boolean as-is
                 cleaned_record[key] = bool(value) if pd.notna(value) else False
             else:
-                # Apply safe_float to all numeric fields
                 cleaned_record[key] = safe_float(value)
         cleaned_records.append(cleaned_record)
     
     return cleaned_records
 
-@app.get("/stock-options")
+@app.get("/api")
+async def root():
+    """Health check endpoint"""
+    return {
+        "status": "ok",
+        "message": "Stock Options API is running"
+    }
+
+@app.get("/api/stock-options")
 async def get_options(symbol: str):
     """
     Get stock options data for a given symbol
@@ -109,14 +114,12 @@ async def get_options(symbol: str):
         except:
             pass
         
-        # Try fast_info if info failed
         if current_price is None:
             try:
                 current_price = ticker.fast_info.get('lastPrice')
             except:
                 pass
         
-        # Try to get from history as last resort
         if current_price is None:
             try:
                 hist = ticker.history(period='1d')
@@ -138,22 +141,12 @@ async def get_options(symbol: str):
         }
 
     except HTTPException:
-        # Re-raise HTTP exceptions as-is
         raise
     except Exception as e:
-        # Catch any other errors and return 500
         raise HTTPException(
             status_code=500, 
             detail=f"Error fetching options data: {str(e)}"
         )
 
-@app.get("/")
-async def root():
-    """Health check endpoint"""
-    return {
-        "status": "ok",
-        "message": "Stock Options API is running"
-    }
-
-# Mangum handler for Vercel serverless deployment
-handler = Mangum(app)
+# Handler for Vercel
+handler = Mangum(app, lifespan="off")
