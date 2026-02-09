@@ -60,7 +60,7 @@ def clean_options_data(df):
     
     return cleaned_records
 
-@app.get("")
+@app.get("/api")
 async def root():
     """Health check endpoint"""
     return {
@@ -68,7 +68,7 @@ async def root():
         "message": "Stock Options API is running"
     }
 
-@app.get("/stock-options")
+@app.get("/api/stock-options")
 async def get_options(symbol: str):
     """
     Get stock options data for a given symbol
