@@ -49,3 +49,37 @@ export interface AppData {
   assets: Asset[];
   settings: UserSettings;
 }
+
+// Stock Options Types
+export interface StockOption {
+  contractSymbol: string;
+  strike: number;
+  lastPrice: number;
+  bid: number | null;
+  ask: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  impliedVolatility: number | null;
+  inTheMoney: boolean;
+}
+
+export interface OptionsChainData {
+  symbol: string;
+  currentPrice: number;
+  expirationDate: string;
+  allExpirations: string[];
+  calls: StockOption[];
+  puts: StockOption[];
+  timestamp: string;
+}
+
+export interface FilterConfig {
+  column: string;
+  type: 'text' | 'number' | 'boolean';
+  value: string | number | boolean | { min?: number; max?: number };
+}
+
+export interface StockApiError {
+  error: string;
+  timestamp: string;
+}

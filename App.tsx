@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { TaskBoard } from './components/TaskBoard';
 import { InvestmentDashboard } from './components/InvestmentDashboard';
+import { StockAnalysis } from './components/StockAnalysis';
 import { Login } from './components/Login';
 import { AUTH_KEY } from './constants';
 import { getAppData } from './services/storageService';
@@ -35,11 +36,11 @@ const DashboardOverview = ({ setActiveTab }: { setActiveTab: (t: string) => void
   }, []);
 
   if (loading) {
-      return (
-          <div className="p-10 flex items-center justify-center h-full">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
-          </div>
-      );
+    return (
+      <div className="p-10 flex items-center justify-center h-full">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-brand"></div>
+      </div>
+    );
   }
 
   return (
@@ -49,8 +50,8 @@ const DashboardOverview = ({ setActiveTab }: { setActiveTab: (t: string) => void
         Here is your daily executive summary.
       </p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 max-w-5xl">
-        <div 
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 md:gap-8 max-w-7xl">
+        <div
           onClick={() => setActiveTab('tasks')}
           className="group cursor-pointer bg-white border border-gray-200 hover:border-brand p-6 md:p-8 rounded-2xl transition-all hover:shadow-xl hover:shadow-brand/5 relative overflow-hidden active:scale-[0.98]"
         >
@@ -65,7 +66,7 @@ const DashboardOverview = ({ setActiveTab }: { setActiveTab: (t: string) => void
           </div>
         </div>
 
-        <div 
+        <div
           onClick={() => setActiveTab('investments')}
           className="group cursor-pointer bg-white border border-gray-200 hover:border-emerald-500 p-6 md:p-8 rounded-2xl transition-all hover:shadow-xl hover:shadow-emerald-500/5 relative overflow-hidden active:scale-[0.98]"
         >
@@ -81,6 +82,21 @@ const DashboardOverview = ({ setActiveTab }: { setActiveTab: (t: string) => void
               {new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(stats.totalProfit)}
             </h2>
             <p className="text-slate-500 text-sm md:text-base">Total estimated profit/loss across all portfolios.</p>
+          </div>
+        </div>
+
+        <div
+          onClick={() => setActiveTab('stocks')}
+          className="group cursor-pointer bg-white border border-gray-200 hover:border-purple-500 p-6 md:p-8 rounded-2xl transition-all hover:shadow-xl hover:shadow-purple-500/5 relative overflow-hidden active:scale-[0.98]"
+        >
+          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 z-0 transition-transform group-hover:scale-110"></div>
+          <div className="relative z-10">
+            <div className="flex justify-between items-start mb-6">
+              <span className="text-4xl p-3 bg-purple-50 rounded-xl text-purple-600">📊</span>
+              <span className="bg-purple-100 text-purple-700 text-xs font-bold px-3 py-1 rounded-full uppercase tracking-wide">Analytics</span>
+            </div>
+            <h2 className="text-3xl font-bold mb-2 text-slate-800">Stock Options</h2>
+            <p className="text-slate-500 text-sm md:text-base">Analyze options chains with advanced filtering tools.</p>
           </div>
         </div>
       </div>
@@ -121,13 +137,14 @@ const App: React.FC = () => {
   return (
     <div className="flex h-screen bg-gray-50 text-slate-800 overflow-hidden font-sans selection:bg-brand selection:text-white">
       <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} onLogout={handleLogout} />
-      
+
       <main className="flex-1 h-full overflow-hidden relative flex flex-col">
         {/* Main Content Area: Added pb-20 for mobile bottom nav space */}
         <div className="flex-1 w-full overflow-y-auto custom-scrollbar md:pb-0">
           {activeTab === 'dashboard' && <DashboardOverview setActiveTab={setActiveTab} />}
           {activeTab === 'tasks' && <TaskBoard />}
           {activeTab === 'investments' && <InvestmentDashboard />}
+          {activeTab === 'stocks' && <StockAnalysis />}
         </div>
       </main>
     </div>

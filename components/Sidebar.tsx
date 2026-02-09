@@ -11,6 +11,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLog
     { id: 'dashboard', label: 'Dashboard', icon: '📊' },
     { id: 'tasks', label: 'Tasks', icon: '📋' },
     { id: 'investments', label: 'Money', icon: '💰' },
+    { id: 'stocks', label: 'Stocks Options', icon: '📈' },
   ];
 
   return (
@@ -27,11 +28,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLog
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 font-medium ${
-                activeTab === item.id
-                  ? 'bg-brand-light text-brand'
-                  : 'text-slate-600 hover:bg-gray-100 hover:text-slate-900'
-              }`}
+              className={`w-full flex items-center gap-4 px-4 py-3 rounded-lg transition-all duration-200 font-medium ${activeTab === item.id
+                ? 'bg-brand-light text-brand'
+                : 'text-slate-600 hover:bg-gray-100 hover:text-slate-900'
+                }`}
             >
               <span className="text-xl">{item.icon}</span>
               <span>{item.label}</span>
@@ -40,7 +40,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLog
         </nav>
 
         <div className="p-4 border-t border-gray-100">
-          <button 
+          <button
             onClick={onLogout}
             className="w-full flex items-center gap-4 px-4 py-3 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
           >
@@ -56,15 +56,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, onLog
           <button
             key={item.id}
             onClick={() => setActiveTab(item.id)}
-            className={`flex flex-col items-center gap-1 transition-colors ${
-              activeTab === item.id ? 'text-brand' : 'text-slate-400'
-            }`}
+            className={`flex flex-col items-center gap-1 transition-colors ${activeTab === item.id ? 'text-brand' : 'text-slate-400'
+              }`}
           >
             <span className={`text-2xl ${activeTab === item.id ? 'transform scale-110' : ''} transition-transform`}>{item.icon}</span>
             <span className="text-[10px] font-medium">{item.label}</span>
           </button>
         ))}
-        <button 
+        <button
           onClick={onLogout}
           className="flex flex-col items-center gap-1 text-slate-400 hover:text-rose-500"
         >
