@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { StockOption, OptionsChainData, FilterConfig } from '../types';
+import { StockOption, OptionsChainData } from '../types';
 import { fetchOptionsData, exportToCSV } from '../services/stockService';
+import { TradingViewChart } from './TradingViewChart';
 
 export const StockAnalysis: React.FC = () => {
     const [symbol, setSymbol] = useState('');
@@ -8,10 +9,12 @@ export const StockAnalysis: React.FC = () => {
     const [error, setError] = useState<string | null>(null);
     const [optionsData, setOptionsData] = useState<OptionsChainData | null>(null);
     const [activeTab, setActiveTab] = useState<'calls' | 'puts'>('calls');
-    const [filters, setFilters] = useState<FilterConfig[]>([]);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [sortConfig, setSortConfig] = useState<{ column: string; direction: 'asc' | 'desc' } | null>(null);
-    const [showFilters, setShowFilters] = useState(false);
+    const [selectedExpirations, setSelectedExpirations] = useState<string[]>([]);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [sortColumn, setSortColumn] = useState<keyof StockOption | null>(null);
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+    const [showChart, setShowChart] = useState(false);
+    const RECORDS_PER_PAGE = 20;
 
     const handleSearch = async () => {
         if (!symbol.trim()) {
@@ -25,154 +28,145 @@ export const StockAnalysis: React.FC = () => {
         try {
             const data = await fetchOptionsData(symbol.trim());
             setOptionsData(data);
-            setFilters([]);
-            setSearchQuery('');
-            setSortConfig(null);
+            setSelectedExpirations(data.expirationOptions.length > 0 ? [data.expirationOptions[0].date] : []);
+            setCurrentPage(1);
+            setSortColumn(null);
+            setSortDirection('asc');
+            setShowChart(true);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch stock data');
             setOptionsData(null);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    const handleExpirationChange = async (newExpiration: string) => {
-        if (!symbol || !optionsData) return;
-
-        setLoading(true);
-        setError(null);
-
-        try {
-            const data = await fetchOptionsData(symbol, newExpiration);
-            setOptionsData(data);
-            setFilters([]);
-            setSearchQuery('');
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch data');
+            setShowChart(false);
         } finally {
             setLoading(false);
         }
     };
 
     const handleKeyPress = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            handleSearch();
+        if (e.key === 'Enter') handleSearch();
+    };
+
+    const toggleExpiration = (date: string) => {
+        setSelectedExpirations(prev =>
+            prev.includes(date)
+                ? prev.filter(d => d !== date)
+                : [...prev, date]
+        );
+        setCurrentPage(1);
+    };
+
+    const clearAllExpirations = () => {
+        setSelectedExpirations([]);
+        setCurrentPage(1);
+    };
+
+    const selectAllExpirations = () => {
+        if (!optionsData) return;
+        setSelectedExpirations(optionsData.expirationOptions.map(exp => exp.date));
+        setCurrentPage(1);
+    };
+
+    const handleSort = (column: keyof StockOption) => {
+        if (sortColumn === column) {
+            setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortColumn(column);
+            setSortDirection('asc');
         }
+        setCurrentPage(1);
     };
 
     const getFilteredData = (): StockOption[] => {
         if (!optionsData) return [];
 
-        let data = activeTab === 'calls' ? optionsData.calls : optionsData.puts;
+        const data = activeTab === 'calls'
+            ? optionsData.calls
+            : optionsData.puts;
 
-        // Apply search query
-        if (searchQuery) {
-            const query = searchQuery.toLowerCase();
-            data = data.filter(option =>
-                Object.values(option).some(val =>
-                    String(val).toLowerCase().includes(query)
-                )
-            );
-        }
+        if (selectedExpirations.length === 0) return [];
 
-        // Apply filters
-        filters.forEach(filter => {
-            if (filter.type === 'number' && typeof filter.value === 'object') {
-                const { min, max } = filter.value as { min?: number; max?: number };
-                data = data.filter(option => {
-                    const val = (option as any)[filter.column];
-                    if (val === null || val === undefined) return false;
-                    if (min !== undefined && val < min) return false;
-                    if (max !== undefined && val > max) return false;
-                    return true;
-                });
-            } else if (filter.type === 'text') {
-                data = data.filter(option =>
-                    String((option as any)[filter.column]).toLowerCase().includes(String(filter.value).toLowerCase())
-                );
-            } else if (filter.type === 'boolean') {
-                data = data.filter(option => (option as any)[filter.column] === filter.value);
-            }
-        });
+        let filtered = data.filter(o =>
+            selectedExpirations.includes(o.expirationDate)
+        );
 
-        // Apply sorting
-        if (sortConfig) {
-            data = [...data].sort((a, b) => {
-                const aVal = (a as any)[sortConfig.column];
-                const bVal = (b as any)[sortConfig.column];
+        if (sortColumn) {
+            filtered = [...filtered].sort((a, b) => {
+                const aVal = a[sortColumn];
+                const bVal = b[sortColumn];
 
                 if (aVal === null || aVal === undefined) return 1;
                 if (bVal === null || bVal === undefined) return -1;
 
-                if (aVal < bVal) return sortConfig.direction === 'asc' ? -1 : 1;
-                if (aVal > bVal) return sortConfig.direction === 'asc' ? 1 : -1;
-                return 0;
+                let comparison = 0;
+                if (typeof aVal === 'string' && typeof bVal === 'string') {
+                    comparison = aVal.localeCompare(bVal);
+                } else if (typeof aVal === 'number' && typeof bVal === 'number') {
+                    comparison = aVal - bVal;
+                } else if (typeof aVal === 'boolean' && typeof bVal === 'boolean') {
+                    comparison = (aVal === bVal) ? 0 : aVal ? 1 : -1;
+                }
+
+                return sortDirection === 'asc' ? comparison : -comparison;
             });
         }
 
-        return data;
-    };
-
-    const handleSort = (column: string) => {
-        setSortConfig(prev => {
-            if (!prev || prev.column !== column) {
-                return { column, direction: 'asc' };
-            }
-            if (prev.direction === 'asc') {
-                return { column, direction: 'desc' };
-            }
-            return null;
-        });
+        return filtered;
     };
 
     const handleExport = () => {
         const data = getFilteredData();
-        const filename = `${optionsData?.symbol}_${activeTab}_${optionsData?.selectedExpiration}_${new Date().toISOString().split('T')[0]}.csv`;
+        const filename = `${optionsData?.symbol}_${activeTab}_${new Date().toISOString().split('T')[0]}.csv`;
         exportToCSV(data, filename);
     };
 
     const filteredData = getFilteredData();
+    const totalPages = Math.ceil(filteredData.length / RECORDS_PER_PAGE);
+    const startIndex = (currentPage - 1) * RECORDS_PER_PAGE;
+    const endIndex = startIndex + RECORDS_PER_PAGE;
+    const paginatedData = filteredData.slice(startIndex, endIndex);
 
-    const formatNumber = (num: number | null, decimals = 2) => {
-        if (num === null || num === undefined) return 'N/A';
-        return num.toFixed(decimals);
-    };
+    const formatNumber = (num: number | null, decimals = 2) =>
+        num === null || num === undefined ? 'N/A' : num.toFixed(decimals);
 
-    const formatPercent = (num: number | null) => {
-        if (num === null || num === undefined) return 'N/A';
-        return `${(num * 100).toFixed(2)}%`;
+    const formatPercent = (num: number | null) =>
+        num === null || num === undefined ? 'N/A' : `${(num * 100).toFixed(2)}%`;
+
+    const SortIcon: React.FC<{ column: keyof StockOption }> = ({ column }) => {
+        if (sortColumn !== column) {
+            return <span className="text-gray-400 ml-1">⇅</span>;
+        }
+        return (
+            <span className="ml-1">
+                {sortDirection === 'asc' ? '↑' : '↓'}
+            </span>
+        );
     };
 
     return (
-        <div className="p-6 md:p-10 bg-gray-50 min-h-full">
+        <div className="p-6 bg-gray-50 min-h-full">
             <div className="max-w-7xl mx-auto">
-                {/* Header */}
-                <div className="mb-8">
-                    <h1 className="text-3xl md:text-4xl font-bold mb-2 text-slate-900">Stock Options Analysis</h1>
-                    <p className="text-slate-500 text-base md:text-lg">Analyze stock options with advanced filtering capabilities</p>
-                </div>
 
-                {/* Search Bar */}
-                <div className="bg-white rounded-2xl border border-gray-200 p-6 mb-6 shadow-sm">
+                {/* SEARCH */}
+                <div className="bg-white p-4 rounded-xl shadow-sm mb-4">
                     <div className="flex gap-3">
                         <input
-                            type="text"
                             value={symbol}
                             onChange={(e) => setSymbol(e.target.value.toUpperCase())}
                             onKeyPress={handleKeyPress}
-                            placeholder="Enter stock symbol (e.g., RKLB, AAPL, TSLA)"
-                            className="flex-1 px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent text-lg"
+                            placeholder="Enter symbol (AAPL, TSLA...)"
+                            className="flex-1 border border-gray-300 px-4 py-2 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                             disabled={loading}
                         />
+
                         <button
                             onClick={handleSearch}
                             disabled={loading}
-                            className="px-6 py-3 bg-brand text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            className="px-5 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
                             {loading ? (
                                 <>
-                                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-                                    <span>Loading...</span>
+                                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                    <span>Loading</span>
                                 </>
                             ) : (
                                 <>
@@ -184,215 +178,289 @@ export const StockAnalysis: React.FC = () => {
                     </div>
                 </div>
 
-                {/* Error Message */}
                 {error && (
-                    <div className="bg-rose-50 border border-rose-200 text-rose-700 px-6 py-4 rounded-xl mb-6">
-                        <p className="font-semibold">⚠️ Error</p>
-                        <p className="text-sm mt-1">{error}</p>
+                    <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-4">
+                        {error}
                     </div>
                 )}
 
-                {/* Results */}
-                {optionsData && (
-                    <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-                        {/* Stock Info Header */}
-                        <div className="bg-gradient-to-r from-brand to-blue-700 text-white p-6">
-                            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                                <div>
-                                    <h2 className="text-2xl font-bold">{optionsData.symbol}</h2>
-                                    <p className="text-blue-100 text-sm mt-1">
-                                        {optionsData.expirationOptions.find(e => e.date === optionsData.selectedExpiration)?.label || optionsData.selectedExpiration}
-                                    </p>
-                                </div>
-                                <div className="flex items-baseline gap-2">
-                                    <span className="text-sm text-blue-100">Current Price:</span>
-                                    <span className="text-3xl font-bold">${formatNumber(optionsData.currentPrice)}</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Expiration Date Selector */}
-                        <div className="bg-gray-50 border-b border-gray-200 p-4">
-                            <label className="block text-sm font-semibold text-slate-700 mb-2">
-                                📅 Expiration Date
-                            </label>
-                            <select
-                                value={optionsData.selectedExpiration}
-                                onChange={(e) => handleExpirationChange(e.target.value)}
-                                disabled={loading}
-                                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent bg-white text-slate-900 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                {/* TRADINGVIEW CHART */}
+                {showChart && optionsData && (
+                    <div className="bg-white rounded-xl shadow-sm overflow-hidden mb-4">
+                        <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
+                            <h3 className="font-semibold text-gray-700">Price Chart</h3>
+                            <button
+                                onClick={() => setShowChart(!showChart)}
+                                className="text-sm text-gray-600 hover:text-gray-800"
                             >
-                                {optionsData.expirationOptions.map(exp => (
-                                    <option key={exp.date} value={exp.date}>
-                                        {exp.label}
-                                    </option>
-                                ))}
-                            </select>
+                                {showChart ? 'Hide Chart' : 'Show Chart'}
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            <TradingViewChart symbol={optionsData.symbol} height={500} />
+                        </div>
+                    </div>
+                )}
+
+                {optionsData && (
+                    <div className="bg-white rounded-xl shadow-sm overflow-hidden">
+
+                        {/* HEADER */}
+                        <div className="p-5 bg-gradient-to-r from-emerald-600 to-blue-600 text-white flex justify-between items-center">
+                            <div className="text-2xl font-bold">{optionsData.symbol}</div>
+                            <div className="text-xl font-semibold">${formatNumber(optionsData.currentPrice)}</div>
                         </div>
 
-                        {/* Tabs */}
-                        <div className="border-b border-gray-200 bg-gray-50">
-                            <div className="flex">
-                                <button
-                                    onClick={() => setActiveTab('calls')}
-                                    className={`flex-1 px-6 py-4 font-semibold transition-colors ${activeTab === 'calls'
-                                        ? 'bg-white text-brand border-b-2 border-brand'
-                                        : 'text-slate-500 hover:text-slate-700'
-                                        }`}
-                                >
-                                    📈 Calls ({optionsData.calls.length})
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab('puts')}
-                                    className={`flex-1 px-6 py-4 font-semibold transition-colors ${activeTab === 'puts'
-                                        ? 'bg-white text-rose-600 border-b-2 border-rose-600'
-                                        : 'text-slate-500 hover:text-slate-700'
-                                        }`}
-                                >
-                                    📉 Puts ({optionsData.puts.length})
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* Toolbar */}
-                        <div className="bg-gray-50 border-b border-gray-200 p-4">
-                            <div className="flex flex-col md:flex-row gap-3">
-                                <input
-                                    type="text"
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                    placeholder="🔍 Search all columns..."
-                                    className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-brand focus:border-transparent"
-                                />
+                        {/* EXPIRATION FILTER - CHECKBOX TAGS */}
+                        <div className="p-5 border-b bg-gray-50">
+                            <div className="flex justify-between items-center mb-3">
+                                <label className="text-sm font-semibold text-gray-700">
+                                    Expiration Dates
+                                </label>
                                 <div className="flex gap-2">
                                     <button
-                                        onClick={() => setShowFilters(!showFilters)}
-                                        className={`px-4 py-2 rounded-lg font-medium transition-colors ${showFilters
-                                            ? 'bg-brand text-white'
-                                            : 'bg-white border border-gray-300 text-slate-700 hover:bg-gray-50'
-                                            }`}
+                                        onClick={selectAllExpirations}
+                                        disabled={selectedExpirations.length === optionsData.expirationOptions.length}
+                                        className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:text-gray-400 disabled:cursor-not-allowed"
                                     >
-                                        {showFilters ? '✓' : '☰'} Filters
+                                        Select All
                                     </button>
-                                    {filters.length > 0 && (
-                                        <button
-                                            onClick={() => setFilters([])}
-                                            className="px-4 py-2 bg-rose-100 text-rose-700 rounded-lg font-medium hover:bg-rose-200 transition-colors"
-                                        >
-                                            Clear Filters
-                                        </button>
-                                    )}
+                                    <span className="text-gray-300">|</span>
                                     <button
-                                        onClick={handleExport}
-                                        className="px-4 py-2 bg-emerald-600 text-white rounded-lg font-medium hover:bg-emerald-700 transition-colors"
+                                        onClick={clearAllExpirations}
+                                        disabled={selectedExpirations.length === 0}
+                                        className="text-xs text-gray-600 hover:text-gray-800 font-medium disabled:text-gray-400 disabled:cursor-not-allowed"
                                     >
-                                        📊 Export CSV
+                                        Clear All
                                     </button>
                                 </div>
                             </div>
-
-                            {/* Active Filters Display */}
-                            {filters.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    {filters.map((filter, idx) => (
-                                        <span
-                                            key={idx}
-                                            className="inline-flex items-center gap-2 bg-brand/10 text-brand px-3 py-1 rounded-full text-sm"
+                            
+                            <div className="flex flex-wrap gap-2">
+                                {optionsData.expirationOptions.map(exp => {
+                                    const isSelected = selectedExpirations.includes(exp.date);
+                                    return (
+                                        <button
+                                            key={exp.date}
+                                            onClick={() => toggleExpiration(exp.date)}
+                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                                                isSelected
+                                                    ? 'bg-blue-600 text-white shadow-md'
+                                                    : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                                            }`}
                                         >
-                                            <span className="font-medium">{filter.column}:</span>
-                                            <span>{typeof filter.value === 'object'
-                                                ? `${(filter.value as any).min ?? '∞'} - ${(filter.value as any).max ?? '∞'}`
-                                                : String(filter.value)
-                                            }</span>
-                                            <button
-                                                onClick={() => setFilters(filters.filter((_, i) => i !== idx))}
-                                                className="hover:text-rose-600 font-bold"
-                                            >
-                                                ×
-                                            </button>
-                                        </span>
-                                    ))}
-                                </div>
-                            )}
+                                            {exp.label}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                            
+                            <p className="text-xs text-gray-500 mt-3">
+                                {selectedExpirations.length === 0 
+                                    ? 'Please select at least one expiration date to view data'
+                                    : `${selectedExpirations.length} expiration date(s) selected`
+                                }
+                            </p>
                         </div>
 
-                        {/* Table */}
+                        {/* TABS */}
+                        <div className="flex border-b">
+                            {['calls', 'puts'].map(t => (
+                                <button
+                                    key={t}
+                                    onClick={() => {
+                                        setActiveTab(t as any);
+                                        setCurrentPage(1);
+                                    }}
+                                    className={`flex-1 py-3 font-semibold transition-colors ${
+                                        activeTab === t 
+                                            ? 'bg-white text-blue-600 border-b-2 border-blue-600' 
+                                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                                    }`}
+                                >
+                                    {t.toUpperCase()}
+                                </button>
+                            ))}
+                        </div>
+
+                        {/* EXPORT */}
+                        <div className="p-4 border-b bg-gray-50">
+                            <button
+                                onClick={handleExport}
+                                className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors flex items-center gap-2"
+                            >
+                                <span>📊</span>
+                                <span>Export to CSV</span>
+                            </button>
+                        </div>
+
+                        {/* TABLE */}
                         <div className="overflow-x-auto">
-                            <table className="w-full">
-                                <thead className="bg-gray-100 border-b border-gray-200">
+                            <table className="w-full text-sm">
+                                <thead className="bg-gradient-to-r from-gray-100 to-gray-200 border-b-2 border-gray-300">
                                     <tr>
-                                        {['Contract', 'Strike', 'Last', 'Bid', 'Ask', 'Volume', 'Open Int.', 'IV', 'ITM'].map((header, idx) => {
-                                            const columnKey = ['contractSymbol', 'strike', 'lastPrice', 'bid', 'ask', 'volume', 'openInterest', 'impliedVolatility', 'inTheMoney'][idx];
-                                            return (
-                                                <th
-                                                    key={header}
-                                                    onClick={() => handleSort(columnKey)}
-                                                    className="px-4 py-3 text-left text-xs font-semibold text-slate-600 uppercase tracking-wider cursor-pointer hover:bg-gray-200 transition-colors"
-                                                >
-                                                    <div className="flex items-center gap-1">
-                                                        <span>{header}</span>
-                                                        {sortConfig?.column === columnKey && (
-                                                            <span>{sortConfig.direction === 'asc' ? '↑' : '↓'}</span>
-                                                        )}
-                                                    </div>
-                                                </th>
-                                            );
-                                        })}
+                                        <th 
+                                            onClick={() => handleSort('expirationDate')}
+                                            className="px-4 py-3 text-left font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                        >
+                                            <div className="flex items-center">
+                                                Expiration
+                                                <SortIcon column="expirationDate" />
+                                            </div>
+                                        </th>
+                                        <th 
+                                            onClick={() => handleSort('strike')}
+                                            className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                        >
+                                            <div className="flex items-center justify-end">
+                                                Strike
+                                                <SortIcon column="strike" />
+                                            </div>
+                                        </th>
+                                        <th 
+                                            onClick={() => handleSort('bid')}
+                                            className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                        >
+                                            <div className="flex items-center justify-end">
+                                                Bid
+                                                <SortIcon column="bid" />
+                                            </div>
+                                        </th>
+                                        <th 
+                                            onClick={() => handleSort('ask')}
+                                            className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                        >
+                                            <div className="flex items-center justify-end">
+                                                Ask
+                                                <SortIcon column="ask" />
+                                            </div>
+                                        </th>
+                                        <th 
+                                            onClick={() => handleSort('impliedVolatility')}
+                                            className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                        >
+                                            <div className="flex items-center justify-end">
+                                                IV
+                                                <SortIcon column="impliedVolatility" />
+                                            </div>
+                                        </th>
+                                        <th 
+                                            onClick={() => handleSort('inTheMoney')}
+                                            className="px-4 py-3 text-center font-semibold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors select-none"
+                                        >
+                                            <div className="flex items-center justify-center">
+                                                ITM
+                                                <SortIcon column="inTheMoney" />
+                                            </div>
+                                        </th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-gray-200">
-                                    {filteredData.length === 0 ? (
-                                        <tr>
-                                            <td colSpan={9} className="px-4 py-8 text-center text-slate-500">
-                                                No options found matching your filters
+                                <tbody>
+                                    {paginatedData.map((o, index) => (
+                                        <tr 
+                                            key={o.contractSymbol} 
+                                            className={`border-b border-gray-200 hover:bg-blue-50 transition-colors ${
+                                                index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                            }`}
+                                        >
+                                            <td className="px-4 py-3 text-left border-r border-gray-200">
+                                                {o.expirationDate}
+                                            </td>
+                                            <td className="px-4 py-3 text-right font-medium border-r border-gray-200">
+                                                ${formatNumber(o.strike)}
+                                            </td>
+                                            <td className="px-4 py-3 text-right border-r border-gray-200">
+                                                ${formatNumber(o.bid)}
+                                            </td>
+                                            <td className="px-4 py-3 text-right border-r border-gray-200">
+                                                ${formatNumber(o.ask)}
+                                            </td>
+                                            <td className="px-4 py-3 text-right border-r border-gray-200">
+                                                {formatPercent(o.impliedVolatility)}
+                                            </td>
+                                            <td className="px-4 py-3 text-center">
+                                                {o.inTheMoney ? (
+                                                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full"></span>
+                                                ) : (
+                                                    <span className="inline-block w-2 h-2 bg-gray-300 rounded-full"></span>
+                                                )}
                                             </td>
                                         </tr>
-                                    ) : (
-                                        filteredData.map((option) => (
-                                            <tr
-                                                key={option.contractSymbol}
-                                                className={`hover:bg-gray-50 transition-colors ${option.inTheMoney ? 'bg-emerald-50/50' : ''
-                                                    }`}
-                                            >
-                                                <td className="px-4 py-3 text-xs font-mono text-slate-700">
-                                                    {option.contractSymbol}
-                                                </td>
-                                                <td className="px-4 py-3 font-semibold text-slate-900">
-                                                    ${formatNumber(option.strike)}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-800">
-                                                    ${formatNumber(option.lastPrice)}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {option.bid !== null ? `$${formatNumber(option.bid)}` : 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {option.ask !== null ? `$${formatNumber(option.ask)}` : 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {option.volume !== null ? option.volume.toLocaleString() : 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {option.openInterest !== null ? option.openInterest.toLocaleString() : 'N/A'}
-                                                </td>
-                                                <td className="px-4 py-3 text-slate-600">
-                                                    {formatPercent(option.impliedVolatility)}
-                                                </td>
-                                                <td className="px-4 py-3">
-                                                    <span className={`inline-block w-3 h-3 rounded-full ${option.inTheMoney ? 'bg-emerald-500' : 'bg-gray-300'
-                                                        }`}></span>
-                                                </td>
-                                            </tr>
-                                        ))
-                                    )}
+                                    ))}
                                 </tbody>
                             </table>
                         </div>
 
-                        {/* Footer */}
-                        <div className="bg-gray-50 border-t border-gray-200 px-6 py-4 text-sm text-slate-600">
-                            Showing {filteredData.length} of {activeTab === 'calls' ? optionsData.calls.length : optionsData.puts.length} contracts
-                        </div>
+                        {/* PAGINATION */}
+                        {totalPages > 1 && (
+                            <div className="p-4 bg-gray-50 border-t flex items-center justify-between">
+                                <div className="text-sm text-gray-600">
+                                    Showing {startIndex + 1} to {Math.min(endIndex, filteredData.length)} of {filteredData.length} contracts
+                                </div>
+                                
+                                <div className="flex gap-2">
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                        disabled={currentPage === 1}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                                    >
+                                        Previous
+                                    </button>
+                                    
+                                    <div className="flex gap-1">
+                                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
+                                            if (
+                                                page === 1 ||
+                                                page === totalPages ||
+                                                (page >= currentPage - 1 && page <= currentPage + 1)
+                                            ) {
+                                                return (
+                                                    <button
+                                                        key={page}
+                                                        onClick={() => setCurrentPage(page)}
+                                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                                                            currentPage === page
+                                                                ? 'bg-blue-600 text-white'
+                                                                : 'border border-gray-300 hover:bg-gray-100'
+                                                        }`}
+                                                    >
+                                                        {page}
+                                                    </button>
+                                                );
+                                            } else if (
+                                                page === currentPage - 2 ||
+                                                page === currentPage + 2
+                                            ) {
+                                                return <span key={page} className="px-2 py-1.5">...</span>;
+                                            }
+                                            return null;
+                                        })}
+                                    </div>
+                                    
+                                    <button
+                                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-100 transition-colors"
+                                    >
+                                        Next
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* EMPTY STATE */}
+                        {filteredData.length === 0 && selectedExpirations.length === 0 && (
+                            <div className="p-8 text-center text-gray-500">
+                                <div className="text-lg mb-2">📅</div>
+                                <div>Please select at least one expiration date above to view options data</div>
+                            </div>
+                        )}
+
+                        {filteredData.length === 0 && selectedExpirations.length > 0 && (
+                            <div className="p-8 text-center text-gray-500">
+                                No contracts found for the selected expiration dates
+                            </div>
+                        )}
                     </div>
                 )}
             </div>
