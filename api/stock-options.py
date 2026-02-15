@@ -7,6 +7,8 @@ import numpy as np
 from datetime import datetime
 import math
 
+ALLOWED_ORIGIN = os.environ.get('VITE_APP_URL', 'http://localhost:3000')
+
 def safe_float(value):
     """Convert NaN/inf to None for JSON compliance"""
     if value is None:
@@ -96,7 +98,7 @@ class handler(BaseHTTPRequestHandler):
         """Set response headers with CORS"""
         self.send_response(status_code)
         self.send_header('Content-type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Origin', ALLOWED_ORIGIN)
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header('Access-Control-Allow-Headers', 'Content-Type')
         self.end_headers()
@@ -104,10 +106,40 @@ class handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handle preflight requests"""
         self._set_headers(200)
+    
+    def is_authorized(self):
+        """
+        BƯỚC 2: Kiểm tra Referer/Origin từ Header gửi lên
+        Đây là lớp bảo vệ thứ 2 để chặn requests từ Postman/Curl/Python script
+        """
+        # Nếu đang chạy localhost để test thì luôn cho qua
+        if 'localhost' in ALLOWED_ORIGIN:
+            return True
+
+        origin = self.headers.get('Origin')
+        referer = self.headers.get('Referer')
+        
+        # Logic: Request BẮT BUỘC phải có Origin hoặc Referer khớp với domain của bạn
+        if origin and origin.startswith(ALLOWED_ORIGIN):
+            return True
+        if referer and referer.startswith(ALLOWED_ORIGIN):
+            return True
+            
+        return False
         
     def do_GET(self):
         """Handle GET requests"""
         try:
+            # --- KIỂM TRA BẢO MẬT ---
+            if not self.is_authorized():
+                self.send_response(403) # Forbidden
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                response = {'error': 'Forbidden: Access denied from this origin.'}
+                self.wfile.write(json.dumps(response).encode())
+                return
+            # ------------------------
+
             parsed_path = urlparse(self.path)
             params = parse_qs(parsed_path.query)
             
