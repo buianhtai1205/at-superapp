@@ -1,147 +1,162 @@
-
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import TelegramBot from 'node-telegram-bot-api';
 import { createClient } from '@supabase/supabase-js';
 
-// Setup Supabase Client
+// --- CONFIGURATION ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
 const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
-// Setup Telegram Bot
 const token = process.env.VITE_TELEGRAM_BOT_TOKEN!;
-// Initialize bot in 'webhook' mode (no polling)
-const bot = new TelegramBot(token);
+const bot = new TelegramBot(token, { polling: false });
+
+// --- DATE HELPERS (Sync from TaskBoard.tsx) ---
+const getStartOfWeek = (date: Date) => {
+    const d = new Date(date);
+    const day = d.getDay();
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+    const start = new Date(d.setDate(diff));
+    start.setHours(0, 0, 0, 0);
+    return start;
+};
+
+const getEndOfWeek = (date: Date) => {
+    const start = getStartOfWeek(date);
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+    return end;
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
-        return res.status(200).json({ message: 'Only POST requests are accepted' });
+        return res.status(200).send('Only POST accepted');
     }
 
-    const { body } = req;
+    try {
+        const { body } = req;
+        if (!body.message) return res.status(200).json({ ok: true });
 
-    // Check if it's a message
-    if (!body.message) {
-        return res.status(200).json({ message: 'No message found' });
-    }
+        const chatId = body.message.chat.id;
+        const text = body.message.text || '';
 
-    const msg = body.message;
-    const chatId = msg.chat.id;
-    const text = msg.text || '';
+        // 1. Lệnh /start & /help
+        if (text.startsWith('/start') || text.startsWith('/help')) {
+            await bot.sendMessage(chatId, `
+🚀 **AT SuperApp Task Bot**
+Hệ thống quản lý công việc đồng bộ với Web UI.
 
-    // --- COMMAND HANDLING ---
+**Các lệnh xem danh sách:**
+/day - Xem task hôm nay
+/week - Xem task trong tuần này
+/month - Xem task trong tháng
+/list - Xem tất cả task chưa xong
 
-    // /start
-    if (text.startsWith('/start')) {
-        await bot.sendMessage(chatId, `
-👋 Xin chào! Tôi là Task Bot của AT SuperApp (Serverless).
-Tôi có thể giúp bạn quản lý công việc:
-
-/list - Xem danh sách task chưa hoàn thành
-/add [nội dung] - Thêm task mới
-/done [id] - Đánh dấu task đã xong
-/help - Xem hướng dẫn
-        `);
-    }
-
-    // /help
-    else if (text.startsWith('/help')) {
-        await bot.sendMessage(chatId, `
-📌 **Hướng dẫn sử dụng:**
-
-1. **/list**: Xem các task đang ở trạng thái TODO, DOING, REVIEW.
-2. **/add [nội dung]**: Thêm task mới vào cột đầu tiên (thường là TODO).
-   Ví dụ: \`/add Mua cà phê\`
-3. **/done [id]**: Hoàn thành task. Bạn có thể nhập ID đầy đủ hoặc 4-5 số cuối của ID.
-   Ví dụ: \`/done 1739\`
-`);
-    }
-
-    // /list
-    else if (text.startsWith('/list') || text.startsWith('/tasks')) {
-        const { data: tasks, error } = await supabase
-            .from('tasks')
-            .select('*')
-            .neq('status', 'DONE')
-            .order('created_at', { ascending: false });
-
-        if (error) {
-            await bot.sendMessage(chatId, `⚠️ Lỗi khi lấy danh sách task: ${error.message}`);
-        } else if (!tasks || tasks.length === 0) {
-            await bot.sendMessage(chatId, "🎉 Bạn không có task nào đang chờ!");
-        } else {
-            let response = "📋 **Danh sách Task đang chờ:**\n\n";
-            tasks.forEach((t: any) => {
-                const shortId = t.id.length > 6 ? `...${t.id.slice(-4)}` : t.id;
-                response += `▫️ \`[${t.id}]\` ${t.title} (${t.status})\n`;
-            });
-            await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+**Quản lý task:**
+\`/add [nội dung]\` - Thêm task mới
+\`/done [id]\` - Hoàn thành task (Dùng 4 số cuối ID)
+            `, { parse_mode: 'Markdown' });
         }
-    }
 
-    // /add [content]
-    else if (text.startsWith('/add')) {
-        const content = text.replace('/add', '').trim();
-        if (!content) {
-            await bot.sendMessage(chatId, "⚠️ Vui lòng nhập nội dung task. Ví dụ: /add Mua sữa");
-        } else {
-            // Get default status
-            const { data: columns } = await supabase.from('columns').select('id').limit(1);
-            const defaultStatus = (columns && columns.length > 0) ? columns[0].id : 'TODO';
+        // 2. Lọc Task theo logic Web UI (/day, /week, /month, /list)
+        else if (text.startsWith('/day') || text.startsWith('/week') || text.startsWith('/month') || text.startsWith('/list')) {
+            const now = new Date();
+            let query = supabase.from('tasks').select('*').neq('status', 'DONE');
 
-            const newTask = {
-                id: Date.now().toString(),
-                title: content,
-                category: 'Work',
-                status: defaultStatus,
-                date: new Date().toISOString().split('T')[0],
-                created_at: Date.now()
-            };
+            let label = "Tất cả Task đang chờ";
 
-            const { error } = await supabase.from('tasks').insert([newTask]);
-            if (error) {
-                await bot.sendMessage(chatId, `⚠️ Lỗi khi thêm task: ${error.message}`);
-            } else {
-                await bot.sendMessage(chatId, `✅ Đã thêm task: **${content}**`, { parse_mode: 'Markdown' });
+            if (text.startsWith('/day')) {
+                const todayStr = now.toISOString().split('T')[0];
+                query = query.eq('date', todayStr);
+                label = "📅 Task hôm nay";
             }
-        }
-    }
-
-    // /done [id]
-    else if (text.startsWith('/done')) {
-        const idParam = text.replace('/done', '').trim();
-        if (!idParam) {
-            await bot.sendMessage(chatId, "⚠️ Vui lòng nhập ID của task. Ví dụ: /done 123456");
-        } else {
-            // Search logic
-            let { data: tasks, error } = await supabase.from('tasks').select('id, title').eq('id', idParam);
-
-            if ((!tasks || tasks.length === 0) && idParam.length < 10) {
-                const { data: allTasks } = await supabase.from('tasks').select('id, title').neq('status', 'DONE');
-                if (allTasks) {
-                    const found = allTasks.find((t: any) => t.id.endsWith(idParam));
-                    if (found) tasks = [found];
-                }
+            else if (text.startsWith('/week')) {
+                const start = getStartOfWeek(now).toISOString().split('T')[0];
+                const end = getEndOfWeek(now).toISOString().split('T')[0];
+                query = query.gte('date', start).lte('date', end);
+                label = "🗓️ Task tuần này";
             }
+            else if (text.startsWith('/month')) {
+                const month = now.getMonth() + 1;
+                const year = now.getFullYear();
+                const firstDay = `${year}-${month.toString().padStart(2, '0')}-01`;
+                const lastDay = `${year}-${month.toString().padStart(2, '0')}-31`;
+                query = query.gte('date', firstDay).lte('date', lastDay);
+                label = `🌙 Task trong tháng ${month}`;
+            }
+
+            const { data: tasks, error } = await query.order('date', { ascending: true });
+
+            if (error) throw error;
 
             if (!tasks || tasks.length === 0) {
-                await bot.sendMessage(chatId, `❌ Không tìm thấy task với ID: ${idParam}`);
+                await bot.sendMessage(chatId, `🎉 **${label}**: Bạn không có task nào!`);
             } else {
-                const task = tasks[0];
-                const { error: updateError } = await supabase
-                    .from('tasks')
-                    .update({ status: 'DONE' })
-                    .eq('id', task.id);
+                let response = `📋 **${label}:**\n\n`;
+                tasks.forEach((t: any) => {
+                    const shortId = t.id.slice(-4);
+                    // Hiển thị Icon theo Category giống Web UI
+                    const categoryIcon = t.category === 'Work' ? '💼' : t.category === 'Learning' ? '📚' : '🏠';
+                    response += `▫️ \`[${shortId}]\` ${categoryIcon} *${t.title}*\n      📅 ${t.date} | ${t.status}\n\n`;
+                });
+                await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+            }
+        }
 
-                if (updateError) {
-                    await bot.sendMessage(chatId, `⚠️ Lỗi khi cập nhật task: ${updateError.message}`);
+        // 3. Lệnh /add (Sync logic với storageService.ts)
+        else if (text.startsWith('/add')) {
+            const content = text.replace('/add', '').trim();
+            if (!content) {
+                await bot.sendMessage(chatId, "⚠️ Vui lòng nhập nội dung: `/add Mua cà phê`", { parse_mode: 'Markdown' });
+            } else {
+                // Lấy status mặc định từ cột đầu tiên giống Web UI
+                const { data: columns } = await supabase.from('columns').select('id').order('id').limit(1);
+                const defaultStatus = (columns && columns.length > 0) ? columns[0].id : 'TODO';
+
+                const newTask = {
+                    id: Date.now().toString(),
+                    title: content,
+                    category: 'Work',
+                    status: defaultStatus,
+                    date: new Date().toISOString().split('T')[0],
+                    created_at: Date.now()
+                };
+
+                const { error } = await supabase.from('tasks').insert([newTask]);
+                if (error) throw error;
+                await bot.sendMessage(chatId, `✅ Đã thêm: **${content}**\nID: \`${newTask.id.slice(-4)}\``, { parse_mode: 'Markdown' });
+            }
+        }
+
+        // 4. Lệnh /done (Xử lý tìm ID linh hoạt)
+        else if (text.startsWith('/done')) {
+            const idParam = text.replace('/done', '').trim();
+            if (!idParam) {
+                await bot.sendMessage(chatId, "⚠️ Nhập ID: `/done 1234`", { parse_mode: 'Markdown' });
+            } else {
+                // Logic tìm kiếm: thử tìm full ID, nếu không thấy thì tìm ID kết thúc bằng idParam (giống Web UI/logic cũ)
+                let { data: tasks } = await supabase.from('tasks').select('id, title').eq('id', idParam);
+
+                if (!tasks || tasks.length === 0) {
+                    const { data: allTasks } = await supabase.from('tasks').select('id, title').neq('status', 'DONE');
+                    const found = allTasks?.find(t => t.id.endsWith(idParam));
+                    if (found) tasks = [found];
+                }
+
+                if (!tasks || tasks.length === 0) {
+                    await bot.sendMessage(chatId, "❌ Không tìm thấy Task này.");
                 } else {
-                    await bot.sendMessage(chatId, `✅ Đã hoàn thành task: **${task.title}**`, { parse_mode: 'Markdown' });
+                    const { error } = await supabase.from('tasks').update({ status: 'DONE' }).eq('id', tasks[0].id);
+                    if (error) throw error;
+                    await bot.sendMessage(chatId, `✅ Hoàn thành: **${tasks[0].title}**`);
                 }
             }
         }
+
+    } catch (e: any) {
+        console.error("Bot Error:", e);
+        // Luôn trả về 200 để Telegram không gửi lại request cũ liên tục
     }
 
-    // Respond to valid request
     return res.status(200).json({ ok: true });
 }
