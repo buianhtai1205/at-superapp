@@ -8,6 +8,7 @@ const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const token = process.env.VITE_TELEGRAM_BOT_TOKEN!;
+const ALLOWED_USERS = process.env.VITE_WHITELIST_TELEGRAM_USER?.split(',').map(id => parseInt(id.trim())) || [];
 const bot = new TelegramBot(token, { polling: false });
 
 // --- DATE HELPERS (Sync from TaskBoard.tsx) ---
@@ -36,6 +37,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     try {
         const { body } = req;
         if (!body.message) return res.status(200).json({ ok: true });
+
+        const userId = body.message.from.id;
+
+        if (!ALLOWED_USERS.includes(userId)) {
+            console.warn(`Cảnh báo: Người dùng lạ ${userId} đã cố gắng truy cập bot.`);
+            // Trả về 200 để Telegram không gửi lại request, nhưng không làm gì cả
+            await bot.sendMessage(body.message.chat.id, "🚫 Bạn không có quyền sử dụng bot này.");
+            return res.status(200).json({ ok: true });
+        }
 
         const chatId = body.message.chat.id;
         const text = body.message.text || '';
