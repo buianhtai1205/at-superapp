@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { StockOption, OptionsChainData } from '../types';
 import { fetchOptionsData, exportToCSV } from '../services/stockService';
 import { TradingViewChart } from './TradingViewChart';
+import { sendMessageToAI } from '@/services/aiService';
 
 export const StockAnalysis: React.FC = () => {
     const [symbol, setSymbol] = useState('');
@@ -15,6 +17,11 @@ export const StockAnalysis: React.FC = () => {
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const [showChart, setShowChart] = useState(false);
     const RECORDS_PER_PAGE = 20;
+
+    const [chatInput, setChatInput] = useState('');
+    const [chatHistory, setChatHistory] = useState<{ role: string, text: string }[]>([]);
+    const [isChatOpen, setIsChatOpen] = useState(false);
+    const [isAiLoading, setIsAiLoading] = useState(false);
 
     const handleSearch = async () => {
         if (!symbol.trim()) {
@@ -142,6 +149,25 @@ export const StockAnalysis: React.FC = () => {
         );
     };
 
+    const handleChat = async () => {
+        if (!chatInput.trim() || !optionsData) return;
+
+        const userMsg = chatInput;
+        setChatInput('');
+        setChatHistory(prev => [...prev, { role: 'user', text: userMsg }]);
+        setIsAiLoading(true);
+
+        try {
+            // Gửi câu hỏi cho chuyên gia Options
+            const response = await sendMessageToAI(optionsData.symbol, userMsg);
+            setChatHistory(prev => [...prev, { role: 'model', text: response }]);
+        } catch (err) {
+            setChatHistory(prev => [...prev, { role: 'model', text: "Lỗi kết nối AI. Vui lòng kiểm tra API Key!" }]);
+        } finally {
+            setIsAiLoading(false);
+        }
+    };
+
     return (
         <div className="p-6 bg-gray-50 min-h-full">
             <div className="max-w-7xl mx-auto">
@@ -235,7 +261,7 @@ export const StockAnalysis: React.FC = () => {
                                     </button>
                                 </div>
                             </div>
-                            
+
                             <div className="flex flex-wrap gap-2">
                                 {optionsData.expirationOptions.map(exp => {
                                     const isSelected = selectedExpirations.includes(exp.date);
@@ -243,20 +269,19 @@ export const StockAnalysis: React.FC = () => {
                                         <button
                                             key={exp.date}
                                             onClick={() => toggleExpiration(exp.date)}
-                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
-                                                isSelected
-                                                    ? 'bg-blue-600 text-white shadow-md'
-                                                    : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-                                            }`}
+                                            className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${isSelected
+                                                ? 'bg-blue-600 text-white shadow-md'
+                                                : 'bg-white text-gray-700 border border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                                                }`}
                                         >
                                             {exp.label}
                                         </button>
                                     );
                                 })}
                             </div>
-                            
+
                             <p className="text-xs text-gray-500 mt-3">
-                                {selectedExpirations.length === 0 
+                                {selectedExpirations.length === 0
                                     ? 'Please select at least one expiration date to view data'
                                     : `${selectedExpirations.length} expiration date(s) selected`
                                 }
@@ -272,11 +297,10 @@ export const StockAnalysis: React.FC = () => {
                                         setActiveTab(t as any);
                                         setCurrentPage(1);
                                     }}
-                                    className={`flex-1 py-3 font-semibold transition-colors ${
-                                        activeTab === t 
-                                            ? 'bg-white text-blue-600 border-b-2 border-blue-600' 
-                                            : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
-                                    }`}
+                                    className={`flex-1 py-3 font-semibold transition-colors ${activeTab === t
+                                        ? 'bg-white text-blue-600 border-b-2 border-blue-600'
+                                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                                        }`}
                                 >
                                     {t.toUpperCase()}
                                 </button>
@@ -299,7 +323,7 @@ export const StockAnalysis: React.FC = () => {
                             <table className="w-full text-sm">
                                 <thead className="bg-gradient-to-r from-gray-100 to-gray-200 border-b-2 border-gray-300">
                                     <tr>
-                                        <th 
+                                        <th
                                             onClick={() => handleSort('expirationDate')}
                                             className="px-4 py-3 text-left font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                                         >
@@ -308,7 +332,7 @@ export const StockAnalysis: React.FC = () => {
                                                 <SortIcon column="expirationDate" />
                                             </div>
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSort('strike')}
                                             className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                                         >
@@ -317,7 +341,7 @@ export const StockAnalysis: React.FC = () => {
                                                 <SortIcon column="strike" />
                                             </div>
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSort('bid')}
                                             className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                                         >
@@ -326,7 +350,7 @@ export const StockAnalysis: React.FC = () => {
                                                 <SortIcon column="bid" />
                                             </div>
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSort('ask')}
                                             className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                                         >
@@ -335,7 +359,7 @@ export const StockAnalysis: React.FC = () => {
                                                 <SortIcon column="ask" />
                                             </div>
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSort('impliedVolatility')}
                                             className="px-4 py-3 text-right font-semibold text-gray-700 border-r border-gray-300 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                                         >
@@ -344,7 +368,7 @@ export const StockAnalysis: React.FC = () => {
                                                 <SortIcon column="impliedVolatility" />
                                             </div>
                                         </th>
-                                        <th 
+                                        <th
                                             onClick={() => handleSort('inTheMoney')}
                                             className="px-4 py-3 text-center font-semibold text-gray-700 cursor-pointer hover:bg-gray-200 transition-colors select-none"
                                         >
@@ -357,11 +381,10 @@ export const StockAnalysis: React.FC = () => {
                                 </thead>
                                 <tbody>
                                     {paginatedData.map((o, index) => (
-                                        <tr 
-                                            key={o.contractSymbol} 
-                                            className={`border-b border-gray-200 hover:bg-blue-50 transition-colors ${
-                                                index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
-                                            }`}
+                                        <tr
+                                            key={o.contractSymbol}
+                                            className={`border-b border-gray-200 hover:bg-blue-50 transition-colors ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'
+                                                }`}
                                         >
                                             <td className="px-4 py-3 text-left border-r border-gray-200">
                                                 {o.expirationDate}
@@ -397,7 +420,7 @@ export const StockAnalysis: React.FC = () => {
                                 <div className="text-sm text-gray-600">
                                     Showing {startIndex + 1} to {Math.min(endIndex, filteredData.length)} of {filteredData.length} contracts
                                 </div>
-                                
+
                                 <div className="flex gap-2">
                                     <button
                                         onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
@@ -406,7 +429,7 @@ export const StockAnalysis: React.FC = () => {
                                     >
                                         Previous
                                     </button>
-                                    
+
                                     <div className="flex gap-1">
                                         {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => {
                                             if (
@@ -418,11 +441,10 @@ export const StockAnalysis: React.FC = () => {
                                                     <button
                                                         key={page}
                                                         onClick={() => setCurrentPage(page)}
-                                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                                                            currentPage === page
-                                                                ? 'bg-blue-600 text-white'
-                                                                : 'border border-gray-300 hover:bg-gray-100'
-                                                        }`}
+                                                        className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${currentPage === page
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'border border-gray-300 hover:bg-gray-100'
+                                                            }`}
                                                     >
                                                         {page}
                                                     </button>
@@ -436,7 +458,7 @@ export const StockAnalysis: React.FC = () => {
                                             return null;
                                         })}
                                     </div>
-                                    
+
                                     <button
                                         onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                                         disabled={currentPage === totalPages}
@@ -462,6 +484,106 @@ export const StockAnalysis: React.FC = () => {
                             </div>
                         )}
                     </div>
+                )}
+            </div>
+
+            {/* --- CHATBOX UI FLOATING --- */}
+            <div className={`fixed bottom-5 right-5 w-96 transition-all duration-300 shadow-2xl rounded-2xl overflow-hidden border border-gray-200 bg-white flex flex-col z-50 ${isChatOpen ? 'h-[550px]' : 'h-14'}`}>
+                {/* Header */}
+                <div
+                    className="p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex justify-between items-center cursor-pointer"
+                    onClick={() => setIsChatOpen(!isChatOpen)}
+                >
+                    <div className="flex items-center gap-2">
+                        <span className="text-xl">🤖</span>
+                        <span className="font-bold">Chuyên gia Options ({optionsData?.symbol})</span>
+                    </div>
+                    <span className="text-sm">{isChatOpen ? 'Thoát ▼' : 'Hỏi Chuyên Gia ▲'}</span>
+                </div>
+
+                {isChatOpen && (
+                    <>
+                        {/* Chat Body - Đã cải thiện scrollbar và spacing */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 flex flex-col scrollbar-thin scrollbar-thumb-gray-300">
+                            {chatHistory.length === 0 && (
+                                <div className="text-center mt-20 opacity-60">
+                                    <div className="text-3xl mb-2">📊</div>
+                                    <p className="text-gray-500 text-sm font-medium">Chuyên gia Options đã sẵn sàng!</p>
+                                    <p className="text-xs text-gray-400 mt-1 px-10">Hỏi tôi về chiến lược, kiến thức hoặc nhận định hướng đi cho mã {optionsData?.symbol}</p>
+                                </div>
+                            )}
+
+                            {chatHistory.map((msg, i) => (
+                                <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                    <div className={`max-w-[88%] p-3 shadow-sm ${msg.role === 'user'
+                                        ? 'bg-blue-600 text-white rounded-2xl rounded-tr-none'
+                                        : 'bg-white border border-gray-200 text-gray-800 rounded-2xl rounded-tl-none'
+                                        }`}>
+                                        <div className="prose prose-sm max-w-none prose-p:leading-relaxed prose-headings:mb-2 prose-headings:text-inherit">
+                                            <ReactMarkdown>
+                                                {msg.text}
+                                            </ReactMarkdown>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                            {isAiLoading && (
+                                <div className="flex justify-start">
+                                    <div className="bg-white border border-gray-200 p-3 rounded-2xl rounded-tl-none shadow-sm flex items-center gap-2">
+                                        <div className="flex gap-1">
+                                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce"></span>
+                                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:0.2s]"></span>
+                                            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce [animation-delay:0.4s]"></span>
+                                        </div>
+                                        <span className="text-xs text-gray-400 font-medium">Đang suy nghĩ...</span>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Chat Input - Sử dụng Textarea cho nhiều dòng */}
+                        <div className="p-3 border-t bg-white shadow-[0_-4px_10px_rgba(0,0,0,0.03)]">
+                            <div className="relative flex items-end gap-2 bg-gray-100 rounded-xl p-2 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-500 transition-all">
+                                <textarea
+                                    rows={1}
+                                    value={chatInput}
+                                    onChange={(e) => {
+                                        setChatInput(e.target.value);
+                                        // Tự động tăng chiều cao textarea
+                                        e.target.style.height = 'inherit';
+                                        e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
+                                    }}
+                                    onKeyDown={(e) => {
+                                        // Nhấn Enter để gửi, Shift+Enter để xuống dòng
+                                        if (e.key === 'Enter' && !e.shiftKey) {
+                                            e.preventDefault();
+                                            handleChat();
+                                            e.currentTarget.style.height = 'inherit';
+                                        }
+                                    }}
+                                    placeholder="Hỏi về chiến lược Options... (Shift+Enter để xuống dòng)"
+                                    className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 px-2 resize-none max-h-[150px] overflow-y-auto"
+                                />
+                                <button
+                                    onClick={() => {
+                                        handleChat();
+                                        // Reset lại chiều cao sau khi gửi
+                                        const textarea = document.querySelector('textarea');
+                                        if (textarea) textarea.style.height = 'inherit';
+                                    }}
+                                    disabled={isAiLoading || !chatInput.trim()}
+                                    className={`p-2 rounded-lg transition-all ${chatInput.trim() ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'
+                                        }`}
+                                >
+                                    <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+                                        <line x1="22" y1="2" x2="11" y2="13"></line>
+                                        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+                                    </svg>
+                                </button>
+                            </div>
+                            <p className="text-[10px] text-center text-gray-400 mt-2 italic">Dữ liệu được cung cấp bởi Gemini AI (Không kèm data realtime)</p>
+                        </div>
+                    </>
                 )}
             </div>
         </div>
