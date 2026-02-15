@@ -6,6 +6,7 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 import math
+import os
 
 ALLOWED_ORIGIN = os.environ.get('VITE_APP_URL', 'http://localhost:3000')
 
