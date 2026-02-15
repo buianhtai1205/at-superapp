@@ -8,7 +8,7 @@ const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const token = process.env.VITE_TELEGRAM_BOT_TOKEN!;
-const ALLOWED_USERS = process.env.VITE_WHITELIST_TELEGRAM_USER?.split(',').map(id => id.trim()) || [];
+const ALLOWED_USERS = process.env.VITE_TELEGRAM_BOT_ALLOWED_USERS?.split(',').map(id => id.trim()) || [];
 const bot = new TelegramBot(token, { polling: false });
 
 // --- DATE HELPERS (Sync from TaskBoard.tsx) ---
