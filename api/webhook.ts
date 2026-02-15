@@ -8,7 +8,7 @@ const supabaseKey = process.env.VITE_SUPABASE_ANON_KEY!;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 const token = process.env.VITE_TELEGRAM_BOT_TOKEN!;
-const ALLOWED_USERS = process.env.VITE_WHITELIST_TELEGRAM_USER?.split(',').map(id => parseInt(id.trim())) || [];
+const ALLOWED_USERS = process.env.VITE_WHITELIST_TELEGRAM_USER?.split(',').map(id => id.trim()) || [];
 const bot = new TelegramBot(token, { polling: false });
 
 // --- DATE HELPERS (Sync from TaskBoard.tsx) ---
@@ -38,7 +38,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const { body } = req;
         if (!body.message) return res.status(200).json({ ok: true });
 
-        const userId = body.message.from.id;
+        const userId = String(body.message.from.id);
 
         if (!ALLOWED_USERS.includes(userId)) {
             console.warn(`Cảnh báo: Người dùng lạ ${userId} đã cố gắng truy cập bot.`);
