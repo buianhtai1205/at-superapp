@@ -278,28 +278,6 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             await bot.sendMessage(chatId, report, { parse_mode: 'Markdown' });
         }
 
-        // Tra cứu giá nhanh (/crypto)
-        else if (text.startsWith('/crypto')) {
-            // Dùng split để lấy phần tử thứ 2, tránh lỗi replace chuỗi
-            const parts = text.split(/\s+/);
-            const symbol = parts[1]?.toUpperCase();
-
-            if (!symbol) {
-                await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/crypto BTC`", { parse_mode: 'Markdown' });
-            } else {
-                await bot.sendChatAction(chatId, 'typing');
-                const price = await fetchMarketCryptoPrice(symbol);
-
-                if (price) {
-                    // Format giá đẹp hơn (VD: 52,000.50)
-                    const priceStr = price < 1 ? price.toString() : price.toLocaleString('en-US');
-                    await bot.sendMessage(chatId, `📈 Giá **${symbol}** hiện tại: **$${priceStr}**`, { parse_mode: 'Markdown' });
-                } else {
-                    await bot.sendMessage(chatId, `❌ Không tìm thấy giá cho mã **${symbol}**.\n_(Lưu ý: Thử lại với BTC, ETH... hoặc kiểm tra log Vercel)_`);
-                }
-            }
-        }
-
         // ============================================================
         // TÍNH NĂNG 3: AI CHATBOX (MỚI)
         // ============================================================
@@ -331,48 +309,77 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
         // ============================================================
         // TÍNH NĂNG 4: CHECK GIÁ CỔ PHIẾU (MỚI)
         // ============================================================
-        else if (text.startsWith('/stock')) {
-            const symbol = text.split(' ')[1]?.toUpperCase();
+        // ============================================================
+        // TÍNH NĂNG: CHECK GIÁ STOCK & CRYPTO (FIX LỖI 403 & 451)
+        // ============================================================
+        else if (text.startsWith('/stock') || text.startsWith('/crypto')) {
+            const isCrypto = text.startsWith('/crypto');
+            let symbol = text.split(' ')[1]?.toUpperCase();
 
+            // 1. Validate Input
             if (!symbol) {
-                await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/stock RKLB`", { parse_mode: 'Markdown' });
-            } else {
-                await bot.sendChatAction(chatId, 'typing');
+                const example = isCrypto ? '/crypto BTC' : '/stock RKLB';
+                await bot.sendMessage(chatId, `⚠️ Vui lòng nhập mã. VD: \`${example}\``, { parse_mode: 'Markdown' });
+                return res.status(200).json({ ok: true });
+            }
 
-                try {
-                    // Gọi chính API Python của bạn (sử dụng host từ request hiện tại)
-                    const protocol = req.headers['x-forwarded-proto'] || 'http';
-                    const host = req.headers.host;
-                    const apiUrl = `${protocol}://${host}/api/stock-info?symbol=${symbol}`;
+            // 2. Xử lý format mã cho Yahoo Finance (Fix lỗi 451 Binance)
+            // Thay vì dùng Binance, ta lái hết về Yahoo (API Python)
+            // Yahoo quy ước Crypto là: BTC-USD, ETH-USD
+            if (isCrypto && !symbol.includes('-')) {
+                symbol = `${symbol}-USD`;
+            }
 
-                    const response = await fetch(apiUrl);
-                    const data = await response.json();
+            await bot.sendChatAction(chatId, 'typing');
 
-                    if (!response.ok || data.error) {
-                        await bot.sendMessage(chatId, `❌ Không tìm thấy mã **${symbol}** hoặc lỗi API.`);
-                    } else {
-                        // Định dạng icon theo giá tăng/giảm
-                        const isUp = data.change >= 0;
-                        const icon = isUp ? '🟢' : '🔴';
-                        const trend = isUp ? '↑' : '↓';
+            try {
+                // Xác định URL API nội bộ
+                const protocol = req.headers['x-forwarded-proto'] || 'http';
+                const host = req.headers.host;
+                const apiUrl = `${protocol}://${host}/api/stock-info?symbol=${symbol}`;
 
-                        const message = [
-                            `📊 **Thông tin cổ phiếu: ${data.symbol}**`,
-                            `━━━━━━━━━━━━━━━━━`,
-                            `💰 **Giá hiện tại:** \`${data.currentPrice} ${data.currency || 'USD'}\``,
-                            `${icon} **Thay đổi:** ${trend} ${data.change} (${data.percentChange}%)`,
-                            `📈 **Cao/Thấp:** ${data.dayHigh} / ${data.dayLow}`,
-                            `🏦 **Vốn hóa:** ${formatCash(data.marketCap)}`,
-                            `━━━━━━━━━━━━━━━━━`,
-                            `🕒 _Cập nhật: ${new Date(data.timestamp).toLocaleString('vi-VN')}_`
-                        ].join('\n');
+                // 3. FIX LỖI 403: Fake Header Origin
+                // Lấy URL app từ biến môi trường, nếu không có thì fallback
+                const appUrl = process.env.VITE_APP_URL || `https://${host}`;
 
-                        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+                console.log(`📡 Fetching: ${apiUrl} (Origin: ${appUrl})`);
+
+                const response = await fetch(apiUrl, {
+                    method: 'GET',
+                    headers: {
+                        // Đây là chìa khóa để vượt qua lớp bảo mật is_authorized() bên Python
+                        'Origin': appUrl,
+                        'Content-Type': 'application/json'
                     }
-                } catch (error) {
-                    console.error("Stock Price Error:", error);
-                    await bot.sendMessage(chatId, "❌ Có lỗi xảy ra khi lấy giá cổ phiếu.");
+                });
+
+                const data = await response.json();
+
+                if (!response.ok || data.error) {
+                    await bot.sendMessage(chatId, `❌ Không tìm thấy giá cho mã **${symbol}**.\n_(Lỗi: ${data.error || 'Unknown'})_`);
+                } else {
+                    const isUp = data.change >= 0;
+                    const icon = isUp ? '🟢' : '🔴';
+                    const trend = isUp ? '↑' : '↓';
+
+                    // Làm đẹp tên hiển thị (bỏ đuôi -USD nhìn cho gọn)
+                    const displayName = data.symbol.replace('-USD', '');
+
+                    const message = [
+                        `📊 **${isCrypto ? 'Crypto' : 'Stock'}: ${displayName}**`,
+                        `━━━━━━━━━━━━━━━━━`,
+                        `💰 **Giá:** \`${data.currentPrice.toLocaleString()} ${data.currency || 'USD'}\``,
+                        `${icon} **Thay đổi:** ${trend} ${data.change} (${data.percentChange}%)`,
+                        `📈 **Cao/Thấp:** ${data.dayHigh} / ${data.dayLow}`,
+                        `━━━━━━━━━━━━━━━━━`,
+                        `🕒 _Cập nhật: ${new Date(data.timestamp).toLocaleString('vi-VN')}_`
+                    ].join('\n');
+
+                    await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
                 }
+            } catch (error) {
+                console.error("Webhook Fetch Error:", error);
+                await bot.sendMessage(chatId, "❌ Lỗi hệ thống khi lấy dữ liệu.");
             }
         }
 
