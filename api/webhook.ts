@@ -290,14 +290,11 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             if (!symbol) {
                 await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/crypto BTC`", { parse_mode: 'Markdown' });
             } else {
-                // Đoán loại tài sản dựa trên độ dài hoặc ký tự
-                const type = (symbol.length <= 4 && !symbol.includes('USDT')) ? 'STOCK' : 'CRYPTO';
+                const type = 'CRYPTO';
 
                 const price = await fetchMarketPrice(symbol, type);
                 if (price) {
-                    const priceStr = type === 'CRYPTO'
-                        ? `$${price.toLocaleString()}`
-                        : `${price.toLocaleString()} VND`;
+                    const priceStr = `$${price.toLocaleString()}`
                     await bot.sendMessage(chatId, `📈 Giá **${symbol}** hiện tại: **${priceStr}**`, { parse_mode: 'Markdown' });
                 } else {
                     await bot.sendMessage(chatId, `❌ Không tìm thấy giá cho mã **${symbol}**`);
