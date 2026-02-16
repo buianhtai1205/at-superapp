@@ -1,62 +1,87 @@
 #!/bin/bash
-# Local testing script - runs Python HTTP server directly
+echo "🚀 Starting Multi-API Dispatcher (Fixed Version)..."
 
-echo "🚀 Starting Stock Options API server..."
-echo "📍 API will be available at: http://localhost:8000/stock-options?symbol=RKLB"
-echo "⛔ Press Ctrl+C to stop"
-echo ""
-
-# Get script directory
+# Khởi tạo venv
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-
-# Activate virtual environment if exists
 if [ -d "$SCRIPT_DIR/venv" ]; then
-    echo "✅ Activating virtual environment..."
     source "$SCRIPT_DIR/venv/bin/activate"
 fi
 
-# Check if required packages are installed
-python3 -c "import yfinance, pandas, numpy" 2>/dev/null
-if [ $? -ne 0 ]; then
-    echo "❌ Missing required packages. Installing..."
-    pip install yfinance pandas numpy
-fi
+export PYTHONUNBUFFERED=1
 
-# Run the server using Python's http.server with our handler
 python3 <<'PYTHON_CODE'
-from http.server import HTTPServer
+from http.server import HTTPServer, BaseHTTPRequestHandler
 import sys
 import os
+import importlib.util
+from urllib.parse import urlparse
 
-# Add api directory to Python path
-api_path = os.path.join(os.path.dirname(__file__), 'api')
+# Đường dẫn thư mục api
+api_path = os.path.join(os.getcwd(), 'api')
 sys.path.insert(0, api_path)
 
-# Import handler from stock-options.py
-# Since the filename has a hyphen, we need to use importlib
-import importlib.util
-spec = importlib.util.spec_from_file_location("stock_options", os.path.join(api_path, "stock-options.py"))
-stock_options = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(stock_options)
+def get_handler_from_file(file_name):
+    """Nạp module và lấy class handler"""
+    try:
+        module_name = file_name.replace('-', '_').replace('.py', '')
+        file_path = os.path.join(api_path, file_name)
+        
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod.handler
+    except Exception as e:
+        print(f"❌ Lỗi load file {file_name}: {e}")
+        return None
 
-# Get the handler class
-handler = stock_options.handler
+class DynamicRouter(BaseHTTPRequestHandler):
+    # --- CÁC HÀM TIỆN ÍCH ĐỂ GIẢ LẬP HANDLER THẬT ---
+    def _set_headers(self, status_code=200):
+        self.send_response(status_code)
+        self.send_header('Content-type', 'application/json')
+        self.send_header('Access-Control-Allow-Origin', '*')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+        self.end_headers()
+
+    def is_authorized(self):
+        # Ở local thì mặc định là True để test cho nhanh
+        return True
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        endpoint = path.strip('/').split('/')[-1]
+        target_file = f"{endpoint}.py"
+        
+        print(f"📩 Request: {path} -> Target: {target_file}")
+
+        if os.path.exists(os.path.join(api_path, target_file)):
+            handler_class = get_handler_from_file(target_file)
+            if handler_class:
+                try:
+                    # Chạy hàm do_GET của file API với context của Router hiện tại
+                    handler_class.do_GET(self)
+                except Exception as e:
+                    import traceback
+                    print(f"💥 Runtime Error trong {target_file}:")
+                    traceback.print_exc()
+                    # Trả về lỗi JSON thay vì treo
+                    if not self.wfile.closed:
+                        self.send_response(500)
+                        self.end_headers()
+                        self.wfile.write(json.dumps({"error": str(e)}).encode())
+            else:
+                self.send_error(500, "Could not load handler class")
+        else:
+            self.send_error(404, f"API {target_file} not found")
 
 def run(port=8000):
     server_address = ('', port)
-    httpd = HTTPServer(server_address, handler)
-    print(f'✅ Server started successfully!')
-    print(f'🌐 Listening on http://0.0.0.0:{port}')
-    print(f'📊 Local: http://localhost:{port}/stock-options?symbol=AAPL')
-    print(f'📊 Network: http://127.0.0.1:{port}/stock-options?symbol=RKLB')
-    print()
-    
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print('\n\n👋 Shutting down server...')
-        httpd.shutdown()
-        print('✅ Server stopped')
+    httpd = HTTPServer(server_address, DynamicRouter)
+    print(f"✅ API Dispatcher đang chạy tại: http://localhost:{port}")
+    print(f"🔗 Thử: http://localhost:{port}/stock-info?symbol=RKLB")
+    print(f"🔗 Thử: http://localhost:{port}/stock-options?symbol=RKLB")
+    httpd.serve_forever()
 
 if __name__ == '__main__':
     run()
