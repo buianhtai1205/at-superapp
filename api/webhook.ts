@@ -42,17 +42,27 @@ const getEndOfWeek = (date: Date) => {
 // 2. Market Price Helpers (Logic mới cho Portfolio)
 const fetchMarketCryptoPrice = async (symbol: string) => {
     try {
-        const upperSymbol = symbol.toUpperCase();
-
-        // A. CRYPTO (Binance)
+        const upperSymbol = symbol.trim().toUpperCase();
+        // Xử lý để luôn ra dạng BTCUSDT
         const pair = upperSymbol.endsWith('USDT') ? upperSymbol : `${upperSymbol}USDT`;
-        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
+
+        console.log(`[Crypto] Fetching Binance for: ${pair}`); // Log để xem mã gửi đi là gì
+
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+
         if (res.ok) {
             const data: any = await res.json();
-            return parseFloat(data.price); // Trả về giá USD
+            console.log(`[Crypto] Success: ${pair} = ${data.price}`);
+            return parseFloat(data.price);
+        } else {
+            // Log lỗi từ Binance (VD: Invalid Symbol, IP Blocked...)
+            const errorText = await res.text();
+            console.error(`[Crypto] Binance API Error (${res.status}): ${errorText}`);
         }
     } catch (e) {
-        console.error(`Lỗi lấy giá ${symbol}:`, e);
+        console.error(`[Crypto] Network Error:`, e);
     }
     return null;
 };
@@ -270,16 +280,22 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
 
         // Tra cứu giá nhanh (/crypto)
         else if (text.startsWith('/crypto')) {
-            const symbol = text.replace('/crypto', '').trim().toUpperCase();
+            // Dùng split để lấy phần tử thứ 2, tránh lỗi replace chuỗi
+            const parts = text.split(/\s+/);
+            const symbol = parts[1]?.toUpperCase();
+
             if (!symbol) {
                 await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/crypto BTC`", { parse_mode: 'Markdown' });
             } else {
+                await bot.sendChatAction(chatId, 'typing');
                 const price = await fetchMarketCryptoPrice(symbol);
+
                 if (price) {
-                    const priceStr = `$${price.toLocaleString()}`
-                    await bot.sendMessage(chatId, `📈 Giá **${symbol}** hiện tại: **${priceStr}**`, { parse_mode: 'Markdown' });
+                    // Format giá đẹp hơn (VD: 52,000.50)
+                    const priceStr = price < 1 ? price.toString() : price.toLocaleString('en-US');
+                    await bot.sendMessage(chatId, `📈 Giá **${symbol}** hiện tại: **$${priceStr}**`, { parse_mode: 'Markdown' });
                 } else {
-                    await bot.sendMessage(chatId, `❌ Không tìm thấy giá cho mã **${symbol}**`);
+                    await bot.sendMessage(chatId, `❌ Không tìm thấy giá cho mã **${symbol}**.\n_(Lưu ý: Thử lại với BTC, ETH... hoặc kiểm tra log Vercel)_`);
                 }
             }
         }
