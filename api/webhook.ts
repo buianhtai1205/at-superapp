@@ -115,7 +115,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
 💰 **Đầu tư & Tài chính:**
 /pnl - Xem lãi/lỗ danh mục đầu tư
-/stock [mã] - Xem giá nhanh (VD: /stock HPG)
+/stock [mã] - Xem giá nhanh (VD: /stock RKLB)
+/crypto [mã] - Xem giá nhanh (VD: /crypto BTC)
 
 🤖 **AI Chat:**
 Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
@@ -283,11 +284,11 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             await bot.sendMessage(chatId, report, { parse_mode: 'Markdown' });
         }
 
-        // Tra cứu giá nhanh (/stock)
-        else if (text.startsWith('/stock')) {
-            const symbol = text.replace('/stock', '').trim().toUpperCase();
+        // Tra cứu giá nhanh (/crypto)
+        else if (text.startsWith('/crypto')) {
+            const symbol = text.replace('/crypto', '').trim().toUpperCase();
             if (!symbol) {
-                await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/stock VCB` hoặc `/stock BTC`", { parse_mode: 'Markdown' });
+                await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/crypto BTC`", { parse_mode: 'Markdown' });
             } else {
                 // Đoán loại tài sản dựa trên độ dài hoặc ký tự
                 const type = (symbol.length <= 4 && !symbol.includes('USDT')) ? 'STOCK' : 'CRYPTO';
