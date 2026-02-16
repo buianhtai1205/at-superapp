@@ -40,28 +40,16 @@ const getEndOfWeek = (date: Date) => {
 };
 
 // 2. Market Price Helpers (Logic mới cho Portfolio)
-const fetchMarketPrice = async (symbol: string, type: 'CRYPTO' | 'STOCK' | 'ETF') => {
+const fetchMarketCryptoPrice = async (symbol: string) => {
     try {
         const upperSymbol = symbol.toUpperCase();
 
         // A. CRYPTO (Binance)
-        if (type === 'CRYPTO') {
-            const pair = upperSymbol.endsWith('USDT') ? upperSymbol : `${upperSymbol}USDT`;
-            const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
-            if (res.ok) {
-                const data: any = await res.json();
-                return parseFloat(data.price); // Trả về giá USD
-            }
-        }
-        // B. STOCK/ETF (VNDirect - Gọi trực tiếp không cần Proxy vì đây là Server-side)
-        else {
-            const res = await fetch(`https://finfo-api.vndirect.com.vn/v4/stock_prices?sort=date&q=code:${upperSymbol}&size=1`);
-            if (res.ok) {
-                const json: any = await res.json();
-                if (json.data && json.data.length > 0) {
-                    return json.data[0].close * 1000; // VNDirect trả về đơn vị nghìn đồng
-                }
-            }
+        const pair = upperSymbol.endsWith('USDT') ? upperSymbol : `${upperSymbol}USDT`;
+        const res = await fetch(`https://api.binance.com/api/v3/ticker/price?symbol=${pair}`);
+        if (res.ok) {
+            const data: any = await res.json();
+            return parseFloat(data.price); // Trả về giá USD
         }
     } catch (e) {
         console.error(`Lỗi lấy giá ${symbol}:`, e);
@@ -232,16 +220,12 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
 
             // Xử lý song song việc lấy giá để nhanh hơn
             const assetPromises = assets.map(async (asset) => {
-                const currentMarketPrice = await fetchMarketPrice(asset.symbol, asset.type);
+                const currentMarketPrice = await fetchMarketCryptoPrice(asset.symbol);
 
                 // Quy đổi ra VND
                 let priceVND = asset.current_price; // Mặc định dùng giá trong DB nếu lỗi fetch
                 if (currentMarketPrice) {
-                    if (asset.type === 'CRYPTO') {
-                        priceVND = currentMarketPrice * USDT_VND_RATE;
-                    } else {
-                        priceVND = currentMarketPrice;
-                    }
+                    priceVND = currentMarketPrice * USDT_VND_RATE;
                     // Update lại giá vào DB luôn để đồng bộ Web
                     await supabase.from('assets').update({ current_price: priceVND }).eq('id', asset.id);
                 }
@@ -290,9 +274,7 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             if (!symbol) {
                 await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/crypto BTC`", { parse_mode: 'Markdown' });
             } else {
-                const type = 'CRYPTO';
-
-                const price = await fetchMarketPrice(symbol, type);
+                const price = await fetchMarketCryptoPrice(symbol);
                 if (price) {
                     const priceStr = `$${price.toLocaleString()}`
                     await bot.sendMessage(chatId, `📈 Giá **${symbol}** hiện tại: **${priceStr}**`, { parse_mode: 'Markdown' });
