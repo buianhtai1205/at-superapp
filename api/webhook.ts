@@ -69,6 +69,14 @@ const fetchMarketPrice = async (symbol: string, type: 'CRYPTO' | 'STOCK' | 'ETF'
     return null;
 };
 
+function formatCash(n: number) {
+    if (n < 1e6) return n.toFixed(2);
+    if (n >= 1e6 && n < 1e9) return +(n / 1e6).toFixed(2) + "M";
+    if (n >= 1e9 && n < 1e12) return +(n / 1e9).toFixed(2) + "B";
+    if (n >= 1e12) return +(n / 1e12).toFixed(2) + "T";
+    return n.toFixed(2);
+}
+
 // --- MAIN HANDLER ---
 export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (req.method !== 'POST') {
@@ -321,6 +329,54 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             } catch (aiError) {
                 console.error("Gemini Error:", aiError);
                 await bot.sendMessage(chatId, "🤖 AI đang bận, vui lòng thử lại sau.");
+            }
+        }
+
+        // ============================================================
+        // TÍNH NĂNG 4: CHECK GIÁ CỔ PHIẾU (MỚI)
+        // ============================================================
+        else if (text.startsWith('/stock')) {
+            const symbol = text.split(' ')[1]?.toUpperCase();
+
+            if (!symbol) {
+                await bot.sendMessage(chatId, "⚠️ Vui lòng nhập mã. VD: `/stock RKLB`", { parse_mode: 'Markdown' });
+            } else {
+                await bot.sendChatAction(chatId, 'typing');
+
+                try {
+                    // Gọi chính API Python của bạn (sử dụng host từ request hiện tại)
+                    const protocol = req.headers['x-forwarded-proto'] || 'http';
+                    const host = req.headers.host;
+                    const apiUrl = `${protocol}://${host}/api/stock-info?symbol=${symbol}`;
+
+                    const response = await fetch(apiUrl);
+                    const data = await response.json();
+
+                    if (!response.ok || data.error) {
+                        await bot.sendMessage(chatId, `❌ Không tìm thấy mã **${symbol}** hoặc lỗi API.`);
+                    } else {
+                        // Định dạng icon theo giá tăng/giảm
+                        const isUp = data.change >= 0;
+                        const icon = isUp ? '🟢' : '🔴';
+                        const trend = isUp ? '↑' : '↓';
+
+                        const message = [
+                            `📊 **Thông tin cổ phiếu: ${data.symbol}**`,
+                            `━━━━━━━━━━━━━━━━━`,
+                            `💰 **Giá hiện tại:** \`${data.currentPrice} ${data.currency || 'USD'}\``,
+                            `${icon} **Thay đổi:** ${trend} ${data.change} (${data.percentChange}%)`,
+                            `📈 **Cao/Thấp:** ${data.dayHigh} / ${data.dayLow}`,
+                            `🏦 **Vốn hóa:** ${formatCash(data.marketCap)}`,
+                            `━━━━━━━━━━━━━━━━━`,
+                            `🕒 _Cập nhật: ${new Date(data.timestamp).toLocaleString('vi-VN')}_`
+                        ].join('\n');
+
+                        await bot.sendMessage(chatId, message, { parse_mode: 'Markdown' });
+                    }
+                } catch (error) {
+                    console.error("Stock Price Error:", error);
+                    await bot.sendMessage(chatId, "❌ Có lỗi xảy ra khi lấy giá cổ phiếu.");
+                }
             }
         }
 
