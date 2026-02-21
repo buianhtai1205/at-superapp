@@ -75,60 +75,42 @@ function formatCash(n: number) {
     return n.toFixed(2);
 }
 
-// Quản lý session theo chatId để tránh lộ dữ liệu giữa các người dùng
-const chatSessions = new Map<string, any>();
-
-export const sendMessageToAI = async (chatId: string, symbol: string, userMessage: string) => {
-    // Cấu hình model chuyên gia tài chính đa năng
+// --- AI SERVICE: KHÔNG LƯU HISTORY, TỰ NHẬN DIỆN SYMBOL ---
+export const sendMessageToAI = async (userMessage: string) => {
     const model = genAI.getGenerativeModel({
         model: "gemini-2.5-flash",
-        systemInstruction: `Bạn là một Chuyên gia Phân tích Tài chính Cấp cao với hơn 15 năm kinh nghiệm tại Wall Street.
-        Nhiệm vụ: Tư vấn chuyên sâu về Chứng khoán Mỹ (Stock), Hợp đồng quyền chọn (Options), và Tiền điện tử (Crypto).
+        systemInstruction: `Bạn là một Chuyên gia Tài chính đa năng (Stock, Options, Crypto).
+        Nhiệm vụ: Phân tích thị trường, giải thích thuật ngữ và tư vấn chiến lược dựa trên dữ liệu mới nhất.
         
-        Kỹ năng của bạn:
-        1. Phân tích kỹ thuật & cơ bản.
-        2. Giải thích các chiến lược Options phức tạp (Iron Condor, Wheel, Straddle...) một cách dễ hiểu.
-        3. Cập nhật xu hướng Crypto và tin tức kinh tế vĩ mô (CPI, FED...).
-        
-        Quy tắc trả lời:
-        - Luôn trả lời bằng tiếng Việt.
-        - Trình bày chuyên nghiệp, dùng bảng (Table) Markdown để so sánh dữ liệu nếu cần.
-        - Trả lời thẳng vào vấn đề, súc tích nhưng đầy đủ ý nghĩa.
-        - Sử dụng nhiều icon tài chính (📈, 📉, 💰, 🐳, 🏛️) để tin nhắn sinh động.
-        - Luôn nhắc nhở: "Đây không phải lời khuyên tài chính".`,
+        Quy tắc:
+        - Trả lời bằng tiếng Việt, súc tích, chuyên nghiệp.
+        - Tự nhận diện mã (symbol) nếu người dùng nhắc đến trong câu hỏi.
+        - Sử dụng bảng biểu và icon tài chính để trình bày.
+        - LUÔN dùng Google Search để lấy giá và tin tức mới nhất.
+        - Mỗi câu trả lời là độc lập, không cần nhớ quá khứ.
+        - Kết thúc bằng câu: "Đây không phải lời khuyên tài chính".`,
         tools: [
             {
-                googleSearch: {} // Kích hoạt "mắt thần" Google Search
+                googleSearch: {} // Kích hoạt tìm kiếm để AI tự đi tìm symbol và giá
             } as any
         ]
     });
 
-    // Khởi tạo hoặc lấy lại phiên chat của người dùng này
-    if (!chatSessions.has(chatId)) {
-        chatSessions.set(chatId, model.startChat({
-            history: [],
-        }));
-    }
-    const currentSession = chatSessions.get(chatId);
-
-    // Tạo ngữ cảnh đầy đủ cho AI
-    const prompt = `[Ngữ cảnh: Mã tài sản đang được quan tâm là ${symbol || 'Thị trường chung'}]
-    Câu hỏi của người dùng: ${userMessage}`;
-
     try {
-        const result = await currentSession.sendMessage(prompt);
+        // Sử dụng generateContent để đảm bảo không lưu lại context gây nặng message
+        const result = await model.generateContent(userMessage);
         let responseText = result.response.text();
 
-        // Kiểm tra xem có trích dẫn nguồn từ Google không
+        // Kiểm tra nguồn trích dẫn từ Google Search
         const metadata = result.response.candidates?.[0]?.groundingMetadata;
         if (metadata?.searchEntryPoint || metadata?.groundingChunks) {
-            responseText += "\n\n🌐 _Dữ liệu được cập nhật thời gian thực qua Google Search_";
+            responseText += "\n\n🌐 _Nguồn dữ liệu: Google Search Realtime_";
         }
 
         return responseText;
     } catch (error: any) {
-        console.error("Gemini Global Error:", error);
-        return `❌ Rất tiếc, chuyên gia AI đang gặp sự cố: ${error.message}`;
+        console.error("Gemini AI Error:", error);
+        return `❌ AI đang bận xử lý dữ liệu thị trường, bạn thử lại sau nhé!`;
     }
 };
 
@@ -344,17 +326,16 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             await bot.sendChatAction(chatId, 'typing');
 
             try {
-                // Gọi hàm AI với chatId để giữ lịch sử chat riêng cho từng người
-                // Ở đây tôi giả định bạn dùng luôn hàm sendMessageToAI đã tối ưu
-                const aiResponse = await sendMessageToAI(chatId.toString(), "Thị trường chung", text);
+                // Chỉ truyền văn bản người dùng chat vào, AI tự lo phần còn lại
+                const aiResponse = await sendMessageToAI(text);
 
                 await bot.sendMessage(chatId, aiResponse, {
                     parse_mode: 'Markdown',
-                    disable_web_page_preview: true // Giúp tin nhắn gọn hơn khi có link nguồn
+                    disable_web_page_preview: true
                 });
             } catch (aiError) {
-                console.error("Gemini Error:", aiError);
-                await bot.sendMessage(chatId, "🤖 Chuyên gia AI đang bận phân tích thị trường, thử lại sau nhé!");
+                console.error("Bot AI Handler Error:", aiError);
+                await bot.sendMessage(chatId, "🤖 AI đang bận, vui lòng thử lại sau.");
             }
         }
 
