@@ -326,13 +326,29 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
             await bot.sendChatAction(chatId, 'typing');
 
             try {
-                // Chỉ truyền văn bản người dùng chat vào, AI tự lo phần còn lại
                 const aiResponse = await sendMessageToAI(text);
 
-                await bot.sendMessage(chatId, aiResponse, {
-                    parse_mode: 'Markdown',
-                    disable_web_page_preview: true
-                });
+                // 1. Giới hạn độ dài để an toàn cho Telegram (4096 chars)
+                // Cắt ở 3800 để dành chỗ cho các ký tự định dạng
+                const safeResponse = aiResponse.length > 3800
+                    ? aiResponse.substring(0, 3800) + "..."
+                    : aiResponse;
+
+                try {
+                    // Thử gửi với Markdown
+                    await bot.sendMessage(chatId, safeResponse, {
+                        parse_mode: 'Markdown',
+                        disable_web_page_preview: true
+                    });
+                } catch (parseError: any) {
+                    // 2. FALLBACK: Nếu lỗi Markdown (sai tag), gửi lại dạng Text thuần
+                    console.warn("Markdown Parse Error, sending plain text instead.");
+                    await bot.sendMessage(chatId, safeResponse, {
+                        disable_web_page_preview: true
+                        // Không để parse_mode ở đây
+                    });
+                }
+
             } catch (aiError) {
                 console.error("Bot AI Handler Error:", aiError);
                 await bot.sendMessage(chatId, "🤖 AI đang bận, vui lòng thử lại sau.");
