@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import TelegramBot from 'node-telegram-bot-api';
 import { createClient } from '@supabase/supabase-js';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { sendMessageToAI } from '@/services/aiService';
 
 // --- CONFIGURATION ---
 const supabaseUrl = process.env.VITE_SUPABASE_URL!;
@@ -286,23 +287,18 @@ Nhắn tin bất kỳ để hỏi AI về thị trường, chiến lược...
         else if (!text.startsWith('/')) {
             await bot.sendChatAction(chatId, 'typing');
 
-            // Cấu hình AI chuyên gia tài chính
-            const model = genAI.getGenerativeModel({
-                model: "gemini-2.5-flash",
-                systemInstruction: `Bạn là trợ lý ảo của AT SuperApp. 
-                - Bạn giúp người dùng quản lý công việc và tư vấn đầu tư chứng khoán/crypto.
-                - Trả lời ngắn gọn, vui vẻ, dùng nhiều icon.
-                - Định dạng tin nhắn dùng Markdown (in đậm, nghiêng).
-                - Nếu người dùng hỏi về danh mục đầu tư, hãy nhắc họ dùng lệnh /pnl.`
-            });
-
             try {
-                const result = await model.generateContent(text);
-                const response = result.response.text();
-                await bot.sendMessage(chatId, response, { parse_mode: 'Markdown' });
+                // Gọi hàm AI với chatId để giữ lịch sử chat riêng cho từng người
+                // Ở đây tôi giả định bạn dùng luôn hàm sendMessageToAI đã tối ưu
+                const aiResponse = await sendMessageToAI(chatId.toString(), "Thị trường chung", text);
+
+                await bot.sendMessage(chatId, aiResponse, {
+                    parse_mode: 'Markdown',
+                    disable_web_page_preview: true // Giúp tin nhắn gọn hơn khi có link nguồn
+                });
             } catch (aiError) {
                 console.error("Gemini Error:", aiError);
-                await bot.sendMessage(chatId, "🤖 AI đang bận, vui lòng thử lại sau.");
+                await bot.sendMessage(chatId, "🤖 Chuyên gia AI đang bận phân tích thị trường, thử lại sau nhé!");
             }
         }
 

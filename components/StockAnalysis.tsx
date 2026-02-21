@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import { StockOption, OptionsChainData } from '../types';
 import { fetchOptionsData, exportToCSV } from '../services/stockService';
 import { TradingViewChart } from './TradingViewChart';
-import { sendMessageToAI } from '@/services/aiService';
+import { sendMessageToAIOptions } from '@/services/aiService';
 
 export const StockAnalysis: React.FC = () => {
     const [symbol, setSymbol] = useState('');
@@ -159,7 +159,7 @@ export const StockAnalysis: React.FC = () => {
 
         try {
             // Gửi câu hỏi cho chuyên gia Options
-            const response = await sendMessageToAI(optionsData.symbol, userMsg);
+            const response = await sendMessageToAIOptions(optionsData.symbol, userMsg);
             setChatHistory(prev => [...prev, { role: 'model', text: response }]);
         } catch (err) {
             setChatHistory(prev => [...prev, { role: 'model', text: "Lỗi kết nối AI. Vui lòng kiểm tra API Key!" }]);
