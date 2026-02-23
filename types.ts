@@ -47,6 +47,7 @@ export interface AppData {
   tasks: Task[];
   columns: TaskColumn[]; // New field to store dynamic board config
   assets: Asset[];
+  goals: Goal[];
   settings: UserSettings;
 }
 
@@ -91,4 +92,14 @@ export interface FilterConfig {
 
 export interface StockApiError {
   error: string;
+}
+
+export interface Goal {
+  id: string;
+  title: string;
+  targetValue: number;
+  currentValue: number;
+  unit: string;
+  category: 'FINANCE' | 'LEARNING' | 'PERSONAL';
+  createdAt: number;
 }

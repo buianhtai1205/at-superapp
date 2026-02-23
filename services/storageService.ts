@@ -1,4 +1,4 @@
-import { AppData, Task, Asset, TaskColumn, UserSettings } from '../types';
+import { AppData, Task, Asset, TaskColumn, UserSettings, Goal } from '../types';
 import { INITIAL_DATA, STORAGE_KEY } from '../constants';
 import { supabase } from './supabaseClient';
 
@@ -24,11 +24,12 @@ export const getAppData = async (): Promise<AppData> => {
   // 1. SUPABASE MODE
   if (supabase) {
     try {
-      const [tasksRes, colsRes, assetsRes, settingsRes] = await Promise.all([
+      const [tasksRes, colsRes, assetsRes, settingsRes, goalsRes] = await Promise.all([
         supabase.from('tasks').select('*'),
         supabase.from('columns').select('*'),
         supabase.from('assets').select('*'),
-        supabase.from('settings').select('*').single()
+        supabase.from('settings').select('*').single(),
+        supabase.from('goals').select('*')
       ]);
 
       // Map Supabase snake_case (if auto-generated) or verify structure. 
@@ -52,6 +53,14 @@ export const getAppData = async (): Promise<AppData> => {
         createdAt: Number(a.created_at)
       }));
 
+      const goals = goalsRes.data || [];
+      const mappedGoals: Goal[] = goals.map((g: any) => ({
+        ...g,
+        targetValue: Number(g.target_value),
+        currentValue: Number(g.current_value),
+        createdAt: Number(g.created_at)
+      }));
+
       // If columns table is empty (first run), we might want to return default
       let columns = colsRes.data || [];
       if (columns.length === 0) {
@@ -73,6 +82,7 @@ export const getAppData = async (): Promise<AppData> => {
         tasks: mappedTasks,
         columns: columns,
         assets: mappedAssets,
+        goals: mappedGoals,
         settings: settings
       };
 
@@ -191,3 +201,51 @@ export const updateAssetPrice = async (assetId: string, newPrice: number): Promi
     saveLocalData(data);
   }
 }
+
+// --- GOALS ---
+export const addGoal = async (goal: Goal): Promise<void> => {
+  if (supabase) {
+    await supabase.from('goals').insert([{
+      id: goal.id,
+      title: goal.title,
+      target_value: goal.targetValue,
+      current_value: goal.currentValue,
+      unit: goal.unit,
+      category: goal.category,
+      created_at: goal.createdAt
+    }]);
+  } else {
+    const data = getLocalData();
+    data.goals.push(goal);
+    saveLocalData(data);
+  }
+};
+
+export const updateGoal = async (goalId: string, updates: Partial<Goal>): Promise<void> => {
+  if (supabase) {
+    const dbUpdates: any = { ...updates };
+    if (updates.targetValue !== undefined) dbUpdates.target_value = updates.targetValue;
+    if (updates.currentValue !== undefined) dbUpdates.current_value = updates.currentValue;
+    if (updates.createdAt !== undefined) dbUpdates.created_at = updates.createdAt;
+
+    delete dbUpdates.targetValue;
+    delete dbUpdates.currentValue;
+    delete dbUpdates.createdAt;
+
+    await supabase.from('goals').update(dbUpdates).eq('id', goalId);
+  } else {
+    const data = getLocalData();
+    data.goals = data.goals.map(g => g.id === goalId ? { ...g, ...updates } : g);
+    saveLocalData(data);
+  }
+};
+
+export const deleteGoal = async (goalId: string): Promise<void> => {
+  if (supabase) {
+    await supabase.from('goals').delete().eq('id', goalId);
+  } else {
+    const data = getLocalData();
+    data.goals = data.goals.filter(g => g.id !== goalId);
+    saveLocalData(data);
+  }
+};

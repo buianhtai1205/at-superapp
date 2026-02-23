@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
-const genAI = new GoogleGenerativeAI(process.env.VITE_GOOGLE_GEMINI_API_KEY || "");
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GOOGLE_GEMINI_API_KEY || "");
 
 // Quản lý session theo chatId để tránh lộ dữ liệu giữa các người dùng
 const chatSessions = new Map<string, any>();

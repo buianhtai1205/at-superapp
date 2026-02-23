@@ -6,6 +6,7 @@ import { StockAnalysis } from './components/StockAnalysis';
 import { Login } from './components/Login';
 import { AUTH_KEY } from './constants';
 import { getAppData } from './services/storageService';
+import { GoalsSection } from './components/GoalsSection';
 
 // Simple Dashboard Overview Component
 const DashboardOverview = ({ setActiveTab }: { setActiveTab: (t: string) => void }) => {
@@ -99,6 +100,10 @@ const DashboardOverview = ({ setActiveTab }: { setActiveTab: (t: string) => void
             <p className="text-slate-500 text-sm md:text-base">Analyze options chains with advanced filtering tools.</p>
           </div>
         </div>
+      </div>
+
+      <div className="max-w-7xl">
+        <GoalsSection />
       </div>
     </div>
   );
