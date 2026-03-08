@@ -487,26 +487,37 @@ export const StockAnalysis: React.FC = () => {
                 )}
             </div>
 
-            {/* --- CHATBOX UI FLOATING --- */}
-            <div className={`fixed bottom-5 right-5 w-96 transition-all duration-300 shadow-2xl rounded-2xl overflow-hidden border border-gray-200 bg-white flex flex-col z-50 ${isChatOpen ? 'h-[550px]' : 'h-14'}`}>
-                {/* Header */}
-                <div
-                    className="p-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex justify-between items-center cursor-pointer"
-                    onClick={() => setIsChatOpen(!isChatOpen)}
-                >
-                    <div className="flex items-center gap-2">
-                        <span className="text-xl">🤖</span>
-                        <span className="font-bold">Chuyên gia Options ({optionsData?.symbol})</span>
-                    </div>
-                    <span className="text-sm">{isChatOpen ? 'Thoát ▼' : 'Hỏi Chuyên Gia ▲'}</span>
-                </div>
+            {/* --- CHATBOX UI FLOATING (Messenger/Zalo style) --- */}
+            <div className="fixed bottom-20 right-4 md:bottom-6 md:right-6 z-50 flex flex-col items-end gap-3">
 
+                {/* Chat Panel - chỉ hiện khi mở */}
                 {isChatOpen && (
-                    <>
-                        {/* Chat Body - Đã cải thiện scrollbar và spacing */}
+                    <div className="w-80 sm:w-96 h-[500px] shadow-2xl rounded-2xl overflow-hidden border border-gray-200 bg-white flex flex-col animate-in slide-in-from-bottom-4 duration-200">
+                        {/* Header */}
+                        <div className="px-4 py-3 bg-gradient-to-r from-blue-600 to-blue-700 text-white flex justify-between items-center">
+                            <div className="flex items-center gap-2">
+                                <span className="text-base">🤖</span>
+                                <div>
+                                    <div className="font-semibold text-sm leading-tight">Chuyên gia Options</div>
+                                    {optionsData?.symbol && (
+                                        <div className="text-xs text-blue-200">{optionsData.symbol}</div>
+                                    )}
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setIsChatOpen(false)}
+                                className="w-7 h-7 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        {/* Chat Body */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 flex flex-col scrollbar-thin scrollbar-thumb-gray-300">
                             {chatHistory.length === 0 && (
-                                <div className="text-center mt-20 opacity-60">
+                                <div className="text-center mt-16 opacity-60">
                                     <div className="text-3xl mb-2">📊</div>
                                     <p className="text-gray-500 text-sm font-medium">Chuyên gia Options đã sẵn sàng!</p>
                                     <p className="text-xs text-gray-400 mt-1 px-10">Hỏi tôi về chiến lược, kiến thức hoặc nhận định hướng đi cho mã {optionsData?.symbol}</p>
@@ -541,7 +552,7 @@ export const StockAnalysis: React.FC = () => {
                             )}
                         </div>
 
-                        {/* Chat Input - Sử dụng Textarea cho nhiều dòng */}
+                        {/* Chat Input */}
                         <div className="p-3 border-t bg-white shadow-[0_-4px_10px_rgba(0,0,0,0.03)]">
                             <div className="relative flex items-end gap-2 bg-gray-100 rounded-xl p-2 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-500 transition-all">
                                 <textarea
@@ -549,42 +560,61 @@ export const StockAnalysis: React.FC = () => {
                                     value={chatInput}
                                     onChange={(e) => {
                                         setChatInput(e.target.value);
-                                        // Tự động tăng chiều cao textarea
                                         e.target.style.height = 'inherit';
                                         e.target.style.height = `${Math.min(e.target.scrollHeight, 150)}px`;
                                     }}
                                     onKeyDown={(e) => {
-                                        // Nhấn Enter để gửi, Shift+Enter để xuống dòng
                                         if (e.key === 'Enter' && !e.shiftKey) {
                                             e.preventDefault();
                                             handleChat();
                                             e.currentTarget.style.height = 'inherit';
                                         }
                                     }}
-                                    placeholder="Hỏi về chiến lược Options... (Shift+Enter để xuống dòng)"
+                                    placeholder="Hỏi về Options... (Shift+Enter xuống dòng)"
                                     className="flex-1 bg-transparent border-none focus:ring-0 text-sm py-2 px-2 resize-none max-h-[150px] overflow-y-auto"
                                 />
                                 <button
                                     onClick={() => {
                                         handleChat();
-                                        // Reset lại chiều cao sau khi gửi
                                         const textarea = document.querySelector('textarea');
                                         if (textarea) textarea.style.height = 'inherit';
                                     }}
                                     disabled={isAiLoading || !chatInput.trim()}
-                                    className={`p-2 rounded-lg transition-all ${chatInput.trim() ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'
-                                        }`}
+                                    className={`p-2 rounded-lg transition-all flex-shrink-0 ${chatInput.trim() ? 'bg-blue-600 text-white' : 'bg-gray-300 text-gray-500'}`}
                                 >
-                                    <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4 mr-1" height="1em" width="1em" xmlns="http://www.w3.org/2000/svg">
+                                    <svg stroke="currentColor" fill="none" strokeWidth="2" viewBox="0 0 24 24" strokeLinecap="round" strokeLinejoin="round" className="h-4 w-4" xmlns="http://www.w3.org/2000/svg">
                                         <line x1="22" y1="2" x2="11" y2="13"></line>
                                         <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
                                     </svg>
                                 </button>
                             </div>
-                            <p className="text-[10px] text-center text-gray-400 mt-2 italic">Dữ liệu được cung cấp bởi Gemini AI (Không kèm data realtime)</p>
+                            <p className="text-[10px] text-center text-gray-400 mt-2 italic">Powered by Gemini AI</p>
                         </div>
-                    </>
+                    </div>
                 )}
+
+                {/* FAB Button - nút tròn nhỏ kiểu Zalo/Messenger */}
+                <button
+                    onClick={() => setIsChatOpen(!isChatOpen)}
+                    className="w-14 h-14 rounded-full bg-gradient-to-br from-blue-500 to-blue-700 text-white shadow-lg hover:shadow-xl hover:scale-105 active:scale-95 transition-all duration-200 flex items-center justify-center relative"
+                    title="Hỏi chuyên gia Options"
+                >
+                    {isChatOpen ? (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    ) : (
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
+                    )}
+                    {/* Badge số tin nhắn chưa đọc (nếu cần) */}
+                    {!isChatOpen && chatHistory.length > 0 && (
+                        <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-[10px] font-bold flex items-center justify-center">
+                            {chatHistory.filter(m => m.role === 'model').length}
+                        </span>
+                    )}
+                </button>
             </div>
         </div>
     );
